@@ -13,3 +13,4 @@ export { EmbeddingsUpstageModel } from './nodes/EmbeddingsUpstageModel/Embedding
 export { DocumentParsingUpstage } from './nodes/DocumentParsingUpstage/DocumentParsingUpstage.node';
 export { InformationExtractionUpstage } from './nodes/InformationExtractionUpstage/InformationExtractionUpstage.node';
 export { InformationExtractionSchemaUpstage } from './nodes/InformationExtractionSchemaUpstage/InformationExtractionSchemaUpstage.node';
+export { DocumentClassificationUpstage } from './nodes/DocumentClassificationUpstage/DocumentClassificationUpstage.node';
