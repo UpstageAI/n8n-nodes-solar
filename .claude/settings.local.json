@@ -15,7 +15,8 @@
       "Bash(git push:*)",
       "Bash(npm pkg:*)",
       "Bash(npm config:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(git remote set-url:*)"
     ],
     "deny": []
   }
