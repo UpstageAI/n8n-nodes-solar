@@ -52,19 +52,14 @@ export class DocumentClassificationUpstage implements INodeType {
 			{
 				displayName: 'Model',
 				name: 'model',
-				type: 'options',
-				options: [
-					{ name: 'document-classify (recommended)', value: 'document-classify' },
-				],
+				type: 'hidden',
 				default: 'document-classify',
-				description: 'The model to use for document classification',
 			},
 			{
 				displayName: 'Schema Name',
 				name: 'schemaName',
-				type: 'string',
+				type: 'hidden',
 				default: 'document-classify',
-				description: 'Name for the JSON schema in response_format',
 			},
 			{
 				displayName: 'Classification Categories',
@@ -77,7 +72,7 @@ export class DocumentClassificationUpstage implements INodeType {
 				description: 'Define the categories for document classification',
 				options: [
 					{
-						displayName: 'Category',
+						displayName: 'Add',
 						name: 'values',
 						values: [
 							{
