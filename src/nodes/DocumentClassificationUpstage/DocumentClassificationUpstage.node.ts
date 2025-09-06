@@ -146,9 +146,17 @@ export class DocumentClassificationUpstage implements INodeType {
 				const model = this.getNodeParameter('model', i) as string;
 				const schemaName = this.getNodeParameter('schemaName', i) as string;
 				const schemaInputType = this.getNodeParameter('schemaInputType', i) as string;
-				const categories = this.getNodeParameter('categories', i) as { values: Array<{ label: string; description: string }> };
-				const rawJsonSchema = this.getNodeParameter('rawJsonSchema', i) as string;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
+				
+				// Get parameters based on schema input type
+				let categories: { values: Array<{ label: string; description: string }> } = { values: [] };
+				let rawJsonSchema: string = '';
+				
+				if (schemaInputType === 'form') {
+					categories = this.getNodeParameter('categories', i) as { values: Array<{ label: string; description: string }> };
+				} else {
+					rawJsonSchema = this.getNodeParameter('rawJsonSchema', i) as string;
+				}
 
 				// Prepare content array based on input type
 				let content: any[] = [];
