@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-solar",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Solar LLM and Embeddings nodes for n8n",
   "license": "MIT",
   "homepage": "https://github.com/UpstageAI/n8n-nodes-solar",
