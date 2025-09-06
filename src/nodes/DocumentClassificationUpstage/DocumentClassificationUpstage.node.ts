@@ -62,6 +62,17 @@ export class DocumentClassificationUpstage implements INodeType {
 				default: 'document-classify',
 			},
 			{
+				displayName: 'Schema Input Type',
+				name: 'schemaInputType',
+				type: 'options',
+				options: [
+					{ name: 'Form Input', value: 'form' },
+					{ name: 'Raw JSON', value: 'json' },
+				],
+				default: 'form',
+				description: 'How to define the classification categories',
+			},
+			{
 				displayName: 'Classification Categories',
 				name: 'categories',
 				type: 'fixedCollection',
@@ -70,6 +81,7 @@ export class DocumentClassificationUpstage implements INodeType {
 				},
 				default: {},
 				description: 'Define the categories for document classification',
+				displayOptions: { show: { schemaInputType: ['form'] } },
 				options: [
 					{
 						displayName: 'Add',
@@ -99,6 +111,18 @@ export class DocumentClassificationUpstage implements INodeType {
 				],
 			},
 			{
+				displayName: 'Raw JSON Schema',
+				name: 'rawJsonSchema',
+				type: 'string',
+				typeOptions: {
+					rows: 10,
+				},
+				default: '',
+				placeholder: '[\n  {\n    "const": "invoice",\n    "description": "A document requesting payment for goods or services"\n  },\n  {\n    "const": "receipt",\n    "description": "A document confirming payment has been made"\n  }\n]',
+				description: 'Raw JSON array defining the oneOf schema for classification',
+				displayOptions: { show: { schemaInputType: ['json'] } },
+			},
+			{
 				displayName: 'Return',
 				name: 'returnMode',
 				type: 'options',
@@ -121,7 +145,9 @@ export class DocumentClassificationUpstage implements INodeType {
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
 				const schemaName = this.getNodeParameter('schemaName', i) as string;
+				const schemaInputType = this.getNodeParameter('schemaInputType', i) as string;
 				const categories = this.getNodeParameter('categories', i) as { values: Array<{ label: string; description: string }> };
+				const rawJsonSchema = this.getNodeParameter('rawJsonSchema', i) as string;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
 				// Prepare content array based on input type
@@ -163,11 +189,30 @@ export class DocumentClassificationUpstage implements INodeType {
 					];
 				}
 
-				// Build the JSON schema from categories
-				const oneOf = categories.values.map(cat => ({
-					const: cat.label,
-					description: cat.description,
-				}));
+				// Build the JSON schema from categories or raw JSON
+				let oneOf: any[];
+				
+				if (schemaInputType === 'form') {
+					// Use form input categories
+					oneOf = categories.values.map(cat => ({
+						const: cat.label,
+						description: cat.description,
+					}));
+				} else {
+					// Use raw JSON input
+					if (!rawJsonSchema) {
+						throw new Error('Raw JSON schema is required when input type is JSON.');
+					}
+					
+					try {
+						oneOf = JSON.parse(rawJsonSchema);
+						if (!Array.isArray(oneOf)) {
+							throw new Error('Raw JSON schema must be an array.');
+						}
+					} catch (parseError) {
+						throw new Error(`Invalid JSON format: ${(parseError as Error).message}`);
+					}
+				}
 
 				// Prepare request body
 				const requestBody = {
