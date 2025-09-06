@@ -11,7 +11,11 @@ export class InformationExtractionUpstage implements INodeType {
 	// JSON 구조 검증 및 수정 메서드
 	private static validateAndFixJsonStructure(jsonString: string): string {
 		try {
-			// 대괄호 균형 검사
+			console.log('=== JSON Structure Analysis ===');
+			console.log('Original length:', jsonString.length);
+			console.log('Last 20 chars:', jsonString.substring(jsonString.length - 20));
+			
+			// 1단계: 기본 괄호 균형 검사
 			const openBraces = (jsonString.match(/\{/g) || []).length;
 			const closeBraces = (jsonString.match(/\}/g) || []).length;
 			const openBrackets = (jsonString.match(/\[/g) || []).length;
@@ -19,37 +23,84 @@ export class InformationExtractionUpstage implements INodeType {
 			
 			console.log(`Brace balance: {${openBraces}} {${closeBraces}}, [${openBrackets}] [${closeBrackets}]`);
 			
+			// 2단계: 구조적 분석 및 수정
+			let fixedJson = jsonString;
+			
 			// 중괄호 불균형 수정
 			if (openBraces > closeBraces) {
 				const missingBraces = openBraces - closeBraces;
 				console.log(`Adding ${missingBraces} missing closing braces`);
-				jsonString += '}'.repeat(missingBraces);
+				fixedJson += '}'.repeat(missingBraces);
 			} else if (closeBraces > openBraces) {
 				const extraBraces = closeBraces - openBraces;
 				console.log(`Removing ${extraBraces} extra closing braces`);
-				jsonString = jsonString.replace(/\}+$/, '}'.repeat(closeBraces - extraBraces));
+				fixedJson = fixedJson.replace(/\}+$/, '}'.repeat(closeBraces - extraBraces));
 			}
 			
 			// 대괄호 불균형 수정
 			if (openBrackets > closeBrackets) {
 				const missingBrackets = openBrackets - closeBrackets;
 				console.log(`Adding ${missingBrackets} missing closing brackets`);
-				jsonString += ']'.repeat(missingBrackets);
+				fixedJson += ']'.repeat(missingBrackets);
 			} else if (closeBrackets > openBrackets) {
 				const extraBrackets = closeBrackets - openBrackets;
 				console.log(`Removing ${extraBrackets} extra closing brackets`);
-				jsonString = jsonString.replace(/\]+$/, ']'.repeat(closeBrackets - extraBrackets));
+				fixedJson = fixedJson.replace(/\]+$/, ']'.repeat(closeBrackets - extraBrackets));
 			}
 			
-			// JSON 유효성 재검사
-			JSON.parse(jsonString);
-			console.log('JSON structure fixed successfully');
-			
-			return jsonString;
+			// 3단계: JSON 유효성 검사
+			try {
+				const parsed = JSON.parse(fixedJson);
+				console.log('JSON structure fixed successfully');
+				console.log('Fixed length:', fixedJson.length);
+				console.log('Last 20 chars after fix:', fixedJson.substring(fixedJson.length - 20));
+				return fixedJson;
+			} catch (parseError) {
+				console.log('Still invalid after basic fix:', (parseError as Error).message);
+				
+				// 4단계: 고급 수정 시도
+				fixedJson = InformationExtractionUpstage.advancedJsonFix(fixedJson);
+				
+				// 5단계: 최종 검증
+				try {
+					JSON.parse(fixedJson);
+					console.log('Advanced fix successful');
+					return fixedJson;
+				} catch (finalError) {
+					console.log('Advanced fix failed:', (finalError as Error).message);
+					return jsonString; // 원본 반환
+				}
+			}
 		} catch (error) {
 			console.log('Could not fix JSON structure:', (error as Error).message);
 			return jsonString; // 원본 반환
 		}
+	}
+	
+	// 고급 JSON 수정 메서드
+	private static advancedJsonFix(jsonString: string): string {
+		console.log('=== Advanced JSON Fix ===');
+		
+		// 특정 패턴 수정: properties 객체가 제대로 닫히지 않은 경우
+		// "properties":{...}}}} -> "properties":{...}}}}
+		const propertiesPattern = /("properties":\{[^}]*)\}\}\}\}/g;
+		if (propertiesPattern.test(jsonString)) {
+			console.log('Fixing properties object closure');
+			jsonString = jsonString.replace(propertiesPattern, '$1}}}');
+		}
+		
+		// 다른 일반적인 패턴들
+		// 연속된 닫는 괄호 정리
+		jsonString = jsonString.replace(/\}\}\}+/g, (match) => {
+			const count = match.length;
+			if (count > 2) {
+				console.log(`Reducing ${count} consecutive closing braces to 2`);
+				return '}}';
+			}
+			return match;
+		});
+		
+		return jsonString;
 	}
 	description: INodeTypeDescription = {
 		displayName: 'Upstage Information Extraction',
