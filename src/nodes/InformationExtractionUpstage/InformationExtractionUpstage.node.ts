@@ -145,12 +145,18 @@ export class InformationExtractionUpstage implements INodeType {
 				if (schemaInputType === 'schema') {
 					// Schema Only 모드
 					schemaName = this.getNodeParameter('schemaName', i) as string;
-					const schemaRaw = this.getNodeParameter('json_schema', i) as string;
+					const schemaRaw = this.getNodeParameter('json_schema', i);
 					
 					try {
-						schemaObj = typeof schemaRaw === 'string' ? JSON.parse(schemaRaw) : schemaRaw;
-					} catch {
-						throw new Error('Invalid JSON schema provided');
+						if (typeof schemaRaw === 'string') {
+							schemaObj = JSON.parse(schemaRaw);
+						} else if (typeof schemaRaw === 'object' && schemaRaw !== null) {
+							schemaObj = schemaRaw;
+						} else {
+							throw new Error('Invalid schema data type');
+						}
+					} catch (error) {
+						throw new Error(`Invalid JSON schema provided: ${(error as Error).message}`);
 					}
 
 					responseFormat = {
@@ -162,12 +168,18 @@ export class InformationExtractionUpstage implements INodeType {
 					};
 				} else {
 					// Full Response Format 모드
-					const fullResponseRaw = this.getNodeParameter('fullResponseFormat', i) as string;
+					const fullResponseRaw = this.getNodeParameter('fullResponseFormat', i);
 					
 					try {
-						responseFormat = typeof fullResponseRaw === 'string' ? JSON.parse(fullResponseRaw) : fullResponseRaw;
-					} catch {
-						throw new Error('Invalid full response format JSON provided');
+						if (typeof fullResponseRaw === 'string') {
+							responseFormat = JSON.parse(fullResponseRaw);
+						} else if (typeof fullResponseRaw === 'object' && fullResponseRaw !== null) {
+							responseFormat = fullResponseRaw;
+						} else {
+							throw new Error('Invalid response format data type');
+						}
+					} catch (error) {
+						throw new Error(`Invalid full response format JSON provided: ${(error as Error).message}`);
 					}
 				}
 
