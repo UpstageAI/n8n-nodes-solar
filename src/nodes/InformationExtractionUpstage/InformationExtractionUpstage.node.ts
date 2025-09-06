@@ -174,24 +174,49 @@ export class InformationExtractionUpstage implements INodeType {
 					
 					try {
 						if (typeof fullResponseRaw === 'string') {
-							// 강력한 JSON 클렌징
+							// 1단계: 기본 클렌징 (보이지 않는 문자만 제거)
 							let cleanedJson = fullResponseRaw
 								.trim() // 앞뒤 공백 제거
 								.replace(/[\u200B-\u200D\uFEFF]/g, '') // BOM 및 zero-width 문자 제거
 								.replace(/\r\n/g, '\n') // Windows 줄바꿈 정규화
-								.replace(/\r/g, '\n') // Mac 줄바꿈 정규화
-								.replace(/\n/g, '') // 모든 줄바꿈 제거
-								.replace(/\s+/g, ' ') // 연속 공백을 하나로
-								.replace(/\s*([{}[\]":,])/g, '$1') // JSON 구분자 앞 공백 제거
-								.replace(/([{}[\]":,])\s*/g, '$1') // JSON 구분자 뒤 공백 제거
-								.trim(); // 최종 공백 제거
+								.replace(/\r/g, '\n'); // Mac 줄바꿈 정규화
 							
-							// 디버깅을 위한 로그 (개발 시에만)
-							console.log('Original length:', fullResponseRaw.length);
-							console.log('Cleaned length:', cleanedJson.length);
-							console.log('Position 1200-1210:', cleanedJson.substring(1200, 1210));
+							// 2단계: JSON 유효성 검사 및 포맷 감지
+							let parsedJson;
+							try {
+								// 먼저 원본 그대로 파싱 시도
+								parsedJson = JSON.parse(cleanedJson);
+							} catch (firstError) {
+								// 실패하면 압축된 JSON으로 간주하고 추가 클렌징
+								console.log('First parse failed, trying compressed JSON cleaning...');
+								
+								cleanedJson = cleanedJson
+									.replace(/\n/g, '') // 모든 줄바꿈 제거
+									.replace(/\s+/g, ' ') // 연속 공백을 하나로
+									.replace(/\s*([{}[\]":,])/g, '$1') // JSON 구분자 앞 공백 제거
+									.replace(/([{}[\]":,])\s*/g, '$1') // JSON 구분자 뒤 공백 제거
+									.trim(); // 최종 공백 제거
+								
+								parsedJson = JSON.parse(cleanedJson);
+							}
 							
-							responseFormat = JSON.parse(cleanedJson);
+							// 3단계: JSON 객체 검증
+							if (typeof parsedJson !== 'object' || parsedJson === null) {
+								throw new Error('Parsed result is not a valid JSON object');
+							}
+							
+							// 4단계: 필수 구조 검증
+							if (!parsedJson.type || !parsedJson.json_schema) {
+								throw new Error('Missing required fields: type or json_schema');
+							}
+							
+							responseFormat = parsedJson;
+							
+							// 디버깅 로그
+							console.log('JSON parsing successful');
+							console.log('Type:', parsedJson.type);
+							console.log('Schema name:', parsedJson.json_schema?.name);
+							
 						} else if (typeof fullResponseRaw === 'object' && fullResponseRaw !== null) {
 							responseFormat = fullResponseRaw;
 						} else {
