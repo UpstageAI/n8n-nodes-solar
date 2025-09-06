@@ -8,6 +8,49 @@ import type {
 import { NodeConnectionType } from 'n8n-workflow';
 
 export class InformationExtractionUpstage implements INodeType {
+	// JSON 구조 검증 및 수정 메서드
+	private static validateAndFixJsonStructure(jsonString: string): string {
+		try {
+			// 대괄호 균형 검사
+			const openBraces = (jsonString.match(/\{/g) || []).length;
+			const closeBraces = (jsonString.match(/\}/g) || []).length;
+			const openBrackets = (jsonString.match(/\[/g) || []).length;
+			const closeBrackets = (jsonString.match(/\]/g) || []).length;
+			
+			console.log(`Brace balance: {${openBraces}} {${closeBraces}}, [${openBrackets}] [${closeBrackets}]`);
+			
+			// 중괄호 불균형 수정
+			if (openBraces > closeBraces) {
+				const missingBraces = openBraces - closeBraces;
+				console.log(`Adding ${missingBraces} missing closing braces`);
+				jsonString += '}'.repeat(missingBraces);
+			} else if (closeBraces > openBraces) {
+				const extraBraces = closeBraces - openBraces;
+				console.log(`Removing ${extraBraces} extra closing braces`);
+				jsonString = jsonString.replace(/\}+$/, '}'.repeat(closeBraces - extraBraces));
+			}
+			
+			// 대괄호 불균형 수정
+			if (openBrackets > closeBrackets) {
+				const missingBrackets = openBrackets - closeBrackets;
+				console.log(`Adding ${missingBrackets} missing closing brackets`);
+				jsonString += ']'.repeat(missingBrackets);
+			} else if (closeBrackets > openBrackets) {
+				const extraBrackets = closeBrackets - openBrackets;
+				console.log(`Removing ${extraBrackets} extra closing brackets`);
+				jsonString = jsonString.replace(/\]+$/, ']'.repeat(closeBrackets - extraBrackets));
+			}
+			
+			// JSON 유효성 재검사
+			JSON.parse(jsonString);
+			console.log('JSON structure fixed successfully');
+			
+			return jsonString;
+		} catch (error) {
+			console.log('Could not fix JSON structure:', (error as Error).message);
+			return jsonString; // 원본 반환
+		}
+	}
 	description: INodeTypeDescription = {
 		displayName: 'Upstage Information Extraction',
 		name: 'informationExtractionUpstage',
@@ -189,6 +232,7 @@ export class InformationExtractionUpstage implements INodeType {
 							} catch (firstError) {
 								// 실패하면 압축된 JSON으로 간주하고 추가 클렌징
 								console.log('First parse failed, trying compressed JSON cleaning...');
+								console.log('Original error:', (firstError as Error).message);
 								
 								cleanedJson = cleanedJson
 									.replace(/\n/g, '') // 모든 줄바꿈 제거
@@ -196,6 +240,9 @@ export class InformationExtractionUpstage implements INodeType {
 									.replace(/\s*([{}[\]":,])/g, '$1') // JSON 구분자 앞 공백 제거
 									.replace(/([{}[\]":,])\s*/g, '$1') // JSON 구분자 뒤 공백 제거
 									.trim(); // 최종 공백 제거
+								
+								// JSON 구조 검증 및 수정 시도
+								cleanedJson = InformationExtractionUpstage.validateAndFixJsonStructure(cleanedJson);
 								
 								parsedJson = JSON.parse(cleanedJson);
 							}
