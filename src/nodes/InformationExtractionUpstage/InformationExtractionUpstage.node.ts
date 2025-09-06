@@ -174,8 +174,23 @@ export class InformationExtractionUpstage implements INodeType {
 					
 					try {
 						if (typeof fullResponseRaw === 'string') {
-							// JSON 클렌징: 앞뒤 공백 제거 및 보이지 않는 문자 제거
-							const cleanedJson = fullResponseRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+							// 강력한 JSON 클렌징
+							let cleanedJson = fullResponseRaw
+								.trim() // 앞뒤 공백 제거
+								.replace(/[\u200B-\u200D\uFEFF]/g, '') // BOM 및 zero-width 문자 제거
+								.replace(/\r\n/g, '\n') // Windows 줄바꿈 정규화
+								.replace(/\r/g, '\n') // Mac 줄바꿈 정규화
+								.replace(/\n/g, '') // 모든 줄바꿈 제거
+								.replace(/\s+/g, ' ') // 연속 공백을 하나로
+								.replace(/\s*([{}[\]":,])/g, '$1') // JSON 구분자 앞 공백 제거
+								.replace(/([{}[\]":,])\s*/g, '$1') // JSON 구분자 뒤 공백 제거
+								.trim(); // 최종 공백 제거
+							
+							// 디버깅을 위한 로그 (개발 시에만)
+							console.log('Original length:', fullResponseRaw.length);
+							console.log('Cleaned length:', cleanedJson.length);
+							console.log('Position 1200-1210:', cleanedJson.substring(1200, 1210));
+							
 							responseFormat = JSON.parse(cleanedJson);
 						} else if (typeof fullResponseRaw === 'object' && fullResponseRaw !== null) {
 							responseFormat = fullResponseRaw;
