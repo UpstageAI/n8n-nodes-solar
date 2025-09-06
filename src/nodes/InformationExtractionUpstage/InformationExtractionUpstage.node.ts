@@ -66,11 +66,23 @@ export class InformationExtractionUpstage implements INodeType {
 
 			// JSON 스키마
 			{
+				displayName: 'Schema Input Type',
+				name: 'schemaInputType',
+				type: 'options',
+				options: [
+					{ name: 'Schema Only', value: 'schema' },
+					{ name: 'Full Response Format', value: 'full' },
+				],
+				default: 'schema',
+				description: 'How to provide the JSON schema',
+			},
+			{
 				displayName: 'Schema Name',
 				name: 'schemaName',
 				type: 'string',
 				default: 'document_schema',
 				description: 'Name for the JSON schema in response_format',
+				displayOptions: { show: { schemaInputType: ['schema'] } },
 			},
 			{
 				displayName: 'JSON Schema (object)',
@@ -78,6 +90,15 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'json',
 				default: '{ "type": "object", "properties": {} }',
 				description: 'Target JSON schema for extraction (object schema)',
+				displayOptions: { show: { schemaInputType: ['schema'] } },
+			},
+			{
+				displayName: 'Full Response Format JSON',
+				name: 'fullResponseFormat',
+				type: 'json',
+				default: '{"type":"json_schema","json_schema":{"name":"document_schema","schema":{"type":"object","properties":{}}}}',
+				description: 'Complete response_format JSON (including type, json_schema, name, and schema)',
+				displayOptions: { show: { schemaInputType: ['full'] } },
 			},
 
 			// Chunking 옵션
@@ -112,17 +133,42 @@ export class InformationExtractionUpstage implements INodeType {
 			try {
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
-				const schemaName = this.getNodeParameter('schemaName', i) as string;
-				const schemaRaw = this.getNodeParameter('json_schema', i) as string;
+				const schemaInputType = this.getNodeParameter('schemaInputType', i) as string;
 				const pagesPerChunk = this.getNodeParameter('pagesPerChunk', i, 0) as number;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
 				// 스키마 파싱
+				let responseFormat: any;
+				let schemaName: string;
 				let schemaObj: any;
-				try {
-					schemaObj = typeof schemaRaw === 'string' ? JSON.parse(schemaRaw) : schemaRaw;
-				} catch {
-					throw new Error('Invalid JSON schema provided');
+
+				if (schemaInputType === 'schema') {
+					// Schema Only 모드
+					schemaName = this.getNodeParameter('schemaName', i) as string;
+					const schemaRaw = this.getNodeParameter('json_schema', i) as string;
+					
+					try {
+						schemaObj = typeof schemaRaw === 'string' ? JSON.parse(schemaRaw) : schemaRaw;
+					} catch {
+						throw new Error('Invalid JSON schema provided');
+					}
+
+					responseFormat = {
+						type: 'json_schema',
+						json_schema: {
+							name: schemaName,
+							schema: schemaObj,
+						},
+					};
+				} else {
+					// Full Response Format 모드
+					const fullResponseRaw = this.getNodeParameter('fullResponseFormat', i) as string;
+					
+					try {
+						responseFormat = typeof fullResponseRaw === 'string' ? JSON.parse(fullResponseRaw) : fullResponseRaw;
+					} catch {
+						throw new Error('Invalid full response format JSON provided');
+					}
 				}
 
 				// messages 구성
@@ -156,13 +202,7 @@ export class InformationExtractionUpstage implements INodeType {
 							],
 						},
 					],
-					response_format: {
-						type: 'json_schema',
-						json_schema: {
-							name: schemaName || 'document_schema',
-							schema: schemaObj,
-						},
-					},
+					response_format: responseFormat,
 				};
 
 				// chunking 옵션 (선택)
