@@ -149,7 +149,9 @@ export class InformationExtractionUpstage implements INodeType {
 					
 					try {
 						if (typeof schemaRaw === 'string') {
-							schemaObj = JSON.parse(schemaRaw);
+							// JSON 클렌징: 앞뒤 공백 제거 및 보이지 않는 문자 제거
+							const cleanedJson = schemaRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+							schemaObj = JSON.parse(cleanedJson);
 						} else if (typeof schemaRaw === 'object' && schemaRaw !== null) {
 							schemaObj = schemaRaw;
 						} else {
@@ -172,7 +174,9 @@ export class InformationExtractionUpstage implements INodeType {
 					
 					try {
 						if (typeof fullResponseRaw === 'string') {
-							responseFormat = JSON.parse(fullResponseRaw);
+							// JSON 클렌징: 앞뒤 공백 제거 및 보이지 않는 문자 제거
+							const cleanedJson = fullResponseRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+							responseFormat = JSON.parse(cleanedJson);
 						} else if (typeof fullResponseRaw === 'object' && fullResponseRaw !== null) {
 							responseFormat = fullResponseRaw;
 						} else {
