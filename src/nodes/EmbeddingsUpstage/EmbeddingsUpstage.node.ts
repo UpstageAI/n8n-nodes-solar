@@ -75,7 +75,7 @@ export class EmbeddingsUpstage implements INodeType {
 					},
 				},
 				default: '',
-				placeholder: 'Enter text to embed',
+				placeholder: 'e.g. Hello world, How are you?',
 				description: 'The text to generate embeddings for',
 			},
 			{
@@ -91,7 +91,7 @@ export class EmbeddingsUpstage implements INodeType {
 					rows: 5,
 				},
 				default: '',
-				placeholder: 'Enter texts separated by newlines',
+				placeholder: 'e.g. Hello world\nHow are you?\nGood morning',
 				description: 'Multiple texts to generate embeddings for (one per line). Max 100 texts, total 204,800 tokens. Each text max 4000 tokens.',
 			},
 			{
@@ -104,7 +104,7 @@ export class EmbeddingsUpstage implements INodeType {
 					},
 				},
 				default: '',
-				placeholder: 'Optional: field name containing text',
+				placeholder: 'e.g. data, content, message',
 				description: 'Field name from input data containing the text to embed (if empty, uses the "text" parameter above)',
 			},
 		],

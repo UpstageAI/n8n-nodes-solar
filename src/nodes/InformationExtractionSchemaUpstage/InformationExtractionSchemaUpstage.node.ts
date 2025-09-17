@@ -35,7 +35,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 				displayName: 'Binary Property',
 				name: 'binaryPropertyName',
 				type: 'string',
-				default: 'data', // 필요 시 'document'로 바꿔 사용
+				default: 'data', // Change to 'document' if needed
 				placeholder: 'e.g. document, data, file',
 				description: 'Name of the binary property that contains the file',
 				displayOptions: { show: { inputType: ['binary'] } },
@@ -45,7 +45,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 				name: 'imageUrl',
 				type: 'string',
 				default: '',
-				placeholder: 'https://example.com/sample.png',
+				placeholder: 'e.g. https://example.com/sample.png',
 				displayOptions: { show: { inputType: ['url'] } },
 			},
 			{
@@ -88,7 +88,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 				const prompt = (this.getNodeParameter('prompt', i, '') as string)?.trim();
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
-				// 1) 이미지/문서 소스 준비 (data URL or http URL)
+				// 1) Prepare image/document source (data URL or http URL)
 				let dataUrlOrHttp: string;
 				if (inputType === 'binary') {
 					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
@@ -106,7 +106,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 					if (!dataUrlOrHttp) throw new Error('Image URL is required.');
 				}
 
-				// 2) messages 구성
+				// 2) Compose messages
 				const messages: any[] = [];
 				if (prompt) {
 					messages.push({ role: 'user', content: prompt });
@@ -121,7 +121,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 					],
 				});
 
-				// 3) 요청 바디
+				// 3) Request body
 				const requestBody: any = {
 					model,
 					messages,
@@ -134,20 +134,20 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 					json: true,
 				};
 
-				// 4) 호출
+				// 4) Call
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
 					requestOptions,
 				);
 
-				// 5) 응답 파싱 + 🔴 바이너리 패스스루
+				// 5) Response parsing + 🔴 binary passthrough
 				if (returnMode === 'full') {
 					const out: INodeExecutionData = {
 						json: response,
 						pairedItem: { item: i },
 					};
-					if (items[i].binary) out.binary = items[i].binary; // ⬅ 패스스루
+					if (items[i].binary) out.binary = items[i].binary; // ⬅ passthrough
 					returnData.push(out);
 				} else {
 					const contentStr = response?.choices?.[0]?.message?.content ?? '';
@@ -168,7 +168,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 						},
 						pairedItem: { item: i },
 					};
-					if (items[i].binary) out.binary = items[i].binary; // ⬅ 패스스루
+					if (items[i].binary) out.binary = items[i].binary; // ⬅ passthrough
 					returnData.push(out);
 				}
 			} catch (error) {

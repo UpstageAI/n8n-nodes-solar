@@ -45,7 +45,7 @@ export class DocumentClassificationUpstage implements INodeType {
 				name: 'imageUrl',
 				type: 'string',
 				default: '',
-				placeholder: 'https://example.com/document.jpg',
+				placeholder: 'e.g. https://example.com/document.jpg',
 				description: 'URL of the image to classify',
 				displayOptions: { show: { inputType: ['url'] } },
 			},

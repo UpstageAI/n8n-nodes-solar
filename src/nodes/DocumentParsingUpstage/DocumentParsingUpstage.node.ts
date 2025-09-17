@@ -134,7 +134,7 @@ export class DocumentParsingUpstage implements INodeType {
 					const binaryData = item.binary[binaryPropertyName];
 					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
 
-					// --- FormData 스트림 구성 ---
+					// --- FormData stream configuration ---
 					const form = new FormData();
 					form.append('document', buffer, {
 						filename: binaryData.fileName || 'upload',
@@ -157,9 +157,9 @@ export class DocumentParsingUpstage implements INodeType {
 					const requestOptions: IHttpRequestOptions = {
 						method: 'POST',
 						url,
-						body: form as unknown as any,      // 스트림
-						headers: form.getHeaders(),        // boundary 포함
-						json: false,                       // JSON 아님
+						body: form as unknown as any,      // stream
+						headers: form.getHeaders(),        // include boundary
+						json: false,                       // not JSON
 					};
 
 					const response = await this.helpers.httpRequestWithAuthentication.call(

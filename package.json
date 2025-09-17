@@ -54,6 +54,7 @@
   "devDependencies": {
     "@langchain/core": "^0.3.72",
     "@langchain/openai": "^0.6.9",
+    "@types/lodash": "^4.17.20",
     "@types/node": "^20.0.0",
     "n8n-core": "^1.14.1",
     "n8n-workflow": "^1.82.0",
@@ -62,6 +63,8 @@
   "peerDependencies": {
     "@langchain/core": ">=0.1.0",
     "@langchain/openai": ">=0.0.1",
+    "https-proxy-agent": ">=7.0.0",
+    "lodash": ">=4.17.0",
     "n8n-core": ">=1.0.0",
     "n8n-workflow": ">=1.0.0"
   },
@@ -71,10 +74,5 @@
   },
   "bugs": {
     "url": "https://github.com/UpstageAI/n8n-nodes-solar/issues"
-  },
-  "dependencies": {
-    "@types/lodash": "^4.17.20",
-    "https-proxy-agent": "^7.0.6",
-    "lodash": "^4.17.21"
   }
 }
