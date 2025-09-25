@@ -1,6 +1,7 @@
 import type { ISupplyDataFunctions } from 'n8n-workflow';
 import { N8nLlmTracing } from './N8nLlmTracing';
 import { makeN8nLlmFailedAttemptHandler } from './n8nLlmFailedAttemptHandler';
+import { getHttpProxyAgent as getHttpProxyAgentImpl } from './httpProxyAgent';
 import { getConnectionHintNoticeField as getConnectionHintNoticeFieldImpl } from './sharedFields';
 
 /**
