@@ -1,6 +1,6 @@
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base';
-import type { SerializedFields } from '@langchain/core/dist/load/map_keys';
 import { getModelNameForTiktoken } from '@langchain/core/language_models/base';
+import type { SerializedFields } from '@langchain/core/dist/load/map_keys';
 import type {
 	Serialized,
 	SerializedNotImplemented,
@@ -10,8 +10,16 @@ import type { BaseMessage } from '@langchain/core/messages';
 import type { LLMResult } from '@langchain/core/outputs';
 import { encodingForModel } from '@langchain/core/utils/tiktoken';
 import pick from 'lodash/pick';
-import type { IDataObject, ISupplyDataFunctions, JsonObject } from 'n8n-workflow';
-import { NodeConnectionType, NodeError, NodeOperationError } from 'n8n-workflow';
+import type {
+	IDataObject,
+	ISupplyDataFunctions,
+	JsonObject,
+} from 'n8n-workflow';
+import {
+	NodeConnectionType,
+	NodeError,
+	NodeOperationError,
+} from 'n8n-workflow';
 
 type TokensUsageParser = (llmOutput: LLMResult['llmOutput']) => {
 	completionTokens: number;
@@ -34,7 +42,7 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 	// This is crucial for the handleLLMError handler to work correctly (it should be called before the error is propagated to the root node)
 	awaitHandlers = true;
 
-	connectionType = NodeConnectionType.AiLanguageModel;
+	connectionType = 'ai_languageModel' as NodeConnectionType;
 
 	promptTokensEstimate = 0;
 
@@ -51,7 +59,8 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 	options = {
 		// Default(OpenAI format) parser
 		tokensUsageParser: (llmOutput: LLMResult['llmOutput']) => {
-			const completionTokens = (llmOutput?.tokenUsage?.completionTokens as number) ?? 0;
+			const completionTokens =
+				(llmOutput?.tokenUsage?.completionTokens as number) ?? 0;
 			const promptTokens = (llmOutput?.tokenUsage?.promptTokens as number) ?? 0;
 
 			return {
@@ -68,14 +77,14 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 		options?: {
 			tokensUsageParser?: TokensUsageParser;
 			errorDescriptionMapper?: (error: NodeError) => string;
-		},
+		}
 	) {
 		super();
 		this.options = { ...this.options, ...options };
 	}
 
 	async estimateTokensFromGeneration(generations: LLMResult['generations']) {
-		const messages = generations.flatMap((gen) => gen.map((g) => g.text));
+		const messages = generations.flatMap(gen => gen.map(g => g.text));
 		return await this.estimateTokensFromStringList(messages);
 	}
 
@@ -84,7 +93,7 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 		const encoder = await encodingForModel(embeddingModel);
 
 		const encodedListLength = await Promise.all(
-			list.map(async (text) => encoder.encode(text).length),
+			list.map(async text => encoder.encode(text).length)
 		);
 
 		return encodedListLength.reduce((acc, curr) => acc + curr, 0);
@@ -99,10 +108,12 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 	async handleLLMEnd(output: LLMResult, runId: string) {
 		// The fallback should never happen since handleLLMStart should always set the run details
 		// but just in case, we set the index to the length of the runsMap
-		const runDetails = this.runsMap[runId] ?? { index: Object.keys(this.runsMap).length };
+		const runDetails = this.runsMap[runId] ?? {
+			index: Object.keys(this.runsMap).length,
+		};
 
-		output.generations = output.generations.map((gen) =>
-			gen.map((g) => pick(g, ['text', 'generationInfo'])),
+		output.generations = output.generations.map(gen =>
+			gen.map(g => pick(g, ['text', 'generationInfo']))
 		);
 
 		const tokenUsageEstimate = {
@@ -113,9 +124,8 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 		const tokenUsage = this.options.tokensUsageParser(output.llmOutput);
 
 		if (output.generations.length > 0) {
-			tokenUsageEstimate.completionTokens = await this.estimateTokensFromGeneration(
-				output.generations,
-			);
+			tokenUsageEstimate.completionTokens =
+				await this.estimateTokensFromGeneration(output.generations);
 
 			tokenUsageEstimate.promptTokens = this.promptTokensEstimate;
 			tokenUsageEstimate.totalTokens =
@@ -139,16 +149,18 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 		const parsedMessages =
 			typeof runDetails.messages === 'string'
 				? runDetails.messages
-				: runDetails.messages.map((message) => {
+				: runDetails.messages.map(message => {
 						if (typeof message === 'string') return message;
 						if (typeof message?.toJSON === 'function') return message.toJSON();
 
 						return message;
 					});
 
-		this.executionFunctions.addOutputData(this.connectionType, runDetails.index, [
-			[{ json: { ...response } }],
-		]);
+		this.executionFunctions.addOutputData(
+			this.connectionType,
+			runDetails.index,
+			[[{ json: { ...response } }]]
+		);
 
 		this.logAiEvent('ai-llm-generated-output', {
 			messages: parsedMessages,
@@ -161,17 +173,20 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 		const estimatedTokens = await this.estimateTokensFromStringList(prompts);
 
 		const options = llm.type === 'constructor' ? llm.kwargs : llm;
-		const { index } = this.executionFunctions.addInputData(this.connectionType, [
+		const { index } = this.executionFunctions.addInputData(
+			this.connectionType,
 			[
-				{
-					json: {
-						messages: prompts,
-						estimatedTokens,
-						options,
+				[
+					{
+						json: {
+							messages: prompts,
+							estimatedTokens,
+							options,
+						},
 					},
-				},
-			],
-		]);
+				],
+			]
+		);
 
 		// Save the run details for later use when processing `handleLLMEnd` event
 		this.runsMap[runId] = {
@@ -185,15 +200,20 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 	async handleLLMError(
 		error: IDataObject | Error,
 		runId: string,
-		parentRunId?: string | undefined,
+		parentRunId?: string | undefined
 	) {
-		const runDetails = this.runsMap[runId] ?? { index: Object.keys(this.runsMap).length };
+		const runDetails = this.runsMap[runId] ?? {
+			index: Object.keys(this.runsMap).length,
+		};
 
 		// Filter out non-x- headers to avoid leaking sensitive information in logs
-		if (typeof error === 'object' && error?.hasOwnProperty('headers')) {
+		if (
+			typeof error === 'object' &&
+			Object.prototype.hasOwnProperty.call(error, 'headers')
+		) {
 			const errorWithHeaders = error as { headers: Record<string, unknown> };
 
-			Object.keys(errorWithHeaders.headers).forEach((key) => {
+			Object.keys(errorWithHeaders.headers).forEach(key => {
 				if (!key.startsWith('x-')) {
 					delete errorWithHeaders.headers[key];
 				}
@@ -205,15 +225,23 @@ export class N8nLlmTracing extends BaseCallbackHandler {
 				error.description = this.options.errorDescriptionMapper(error);
 			}
 
-			this.executionFunctions.addOutputData(this.connectionType, runDetails.index, error);
+			this.executionFunctions.addOutputData(
+				this.connectionType,
+				runDetails.index,
+				error
+			);
 		} else {
 			// If the error is not a NodeError, we wrap it in a NodeOperationError
 			this.executionFunctions.addOutputData(
 				this.connectionType,
 				runDetails.index,
-				new NodeOperationError(this.executionFunctions.getNode(), error as JsonObject, {
-					functionality: 'configuration-node',
-				}),
+				new NodeOperationError(
+					this.executionFunctions.getNode(),
+					error as JsonObject,
+					{
+						functionality: 'configuration-node',
+					}
+				)
 			);
 		}
 

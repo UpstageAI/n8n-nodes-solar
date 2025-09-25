@@ -5,20 +5,19 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 export class InformationExtractionSchemaUpstage implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Upstage Schema Generation',
 		name: 'informationExtractionSchemaUpstage',
 		icon: 'file:upstage_v2.svg',
-		group: ['transform', '@n8n/n8n-nodes-langchain'],
+		group: ['transform'],
 		version: 1,
 		description:
 			'Generate a JSON schema from a document/image using Upstage Information Extraction (schema-generation)',
 		defaults: { name: 'Upstage IE — Schema Generation' },
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [{ name: 'upstageApi', required: true }],
 		properties: [
 			{
@@ -52,7 +51,12 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 				displayName: 'Model',
 				name: 'model',
 				type: 'options',
-				options: [{ name: 'information-extract (recommended)', value: 'information-extract' }],
+				options: [
+					{
+						name: 'information-extract (recommended)',
+						value: 'information-extract',
+					},
+				],
 				default: 'information-extract',
 			},
 			{
@@ -85,19 +89,29 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 			try {
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
-				const prompt = (this.getNodeParameter('prompt', i, '') as string)?.trim();
+				const prompt = (
+					this.getNodeParameter('prompt', i, '') as string
+				)?.trim();
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
 				// 1) Prepare image/document source (data URL or http URL)
 				let dataUrlOrHttp: string;
 				if (inputType === 'binary') {
-					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+					const binaryPropertyName = this.getNodeParameter(
+						'binaryPropertyName',
+						i
+					) as string;
 					const item = items[i];
 					if (!item.binary || !item.binary[binaryPropertyName]) {
-						throw new Error(`No binary data found in property "${binaryPropertyName}".`);
+						throw new Error(
+							`No binary data found in property "${binaryPropertyName}".`
+						);
 					}
 					const binaryData = item.binary[binaryPropertyName];
-					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+					const buffer = await this.helpers.getBinaryDataBuffer(
+						i,
+						binaryPropertyName
+					);
 					const mime = binaryData.mimeType || 'application/octet-stream';
 					const base64 = buffer.toString('base64');
 					dataUrlOrHttp = `data:${mime};base64,${base64}`;
@@ -138,7 +152,7 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
-					requestOptions,
+					requestOptions
 				);
 
 				// 5) Response parsing + 🔴 binary passthrough
@@ -186,4 +200,3 @@ export class InformationExtractionSchemaUpstage implements INodeType {
 		return [returnData];
 	}
 }
-

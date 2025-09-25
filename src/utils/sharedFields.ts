@@ -5,32 +5,32 @@ import { NodeConnectionType } from 'n8n-workflow';
  * Get the connection hint field for a node
  */
 export function getConnectionHintNoticeField(
-	allowedConnectionTypes: NodeConnectionType[],
+	allowedConnectionTypes: NodeConnectionType[]
 ): INodeProperties {
 	const connectionTypes = allowedConnectionTypes
-		.map((type) => {
+		.map(type => {
 			switch (type) {
-				case NodeConnectionType.AiAgent:
+				case 'ai_agent':
 					return 'AI Agent';
-				case NodeConnectionType.AiChain:
+				case 'ai_chain':
 					return 'AI Chain';
-				case NodeConnectionType.AiDocument:
+				case 'ai_document':
 					return 'AI Document';
-				case NodeConnectionType.AiEmbedding:
+				case 'ai_embedding':
 					return 'AI Embedding';
-				case NodeConnectionType.AiLanguageModel:
+				case 'ai_languageModel':
 					return 'AI Language Model';
-				case NodeConnectionType.AiMemory:
+				case 'ai_memory':
 					return 'AI Memory';
-				case NodeConnectionType.AiOutputParser:
+				case 'ai_outputParser':
 					return 'AI Output Parser';
-				case NodeConnectionType.AiRetriever:
+				case 'ai_retriever':
 					return 'AI Retriever';
-				case NodeConnectionType.AiTextSplitter:
+				case 'ai_textSplitter':
 					return 'AI Text Splitter';
-				case NodeConnectionType.AiTool:
+				case 'ai_tool':
 					return 'AI Tool';
-				case NodeConnectionType.AiVectorStore:
+				case 'ai_vectorStore':
 					return 'AI Vector Store';
 				default:
 					return type;

@@ -1,4 +1,8 @@
-import type { IDataObject, IExecuteFunctions, ISupplyDataFunctions } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IExecuteFunctions,
+	ISupplyDataFunctions,
+} from 'n8n-workflow';
 
 /**
  * Log AI events for telemetry
@@ -6,11 +10,14 @@ import type { IDataObject, IExecuteFunctions, ISupplyDataFunctions } from 'n8n-w
 export function logAiEvent(
 	executeFunctions: IExecuteFunctions | ISupplyDataFunctions,
 	event: string,
-	data?: IDataObject,
+	data?: IDataObject
 ): void {
 	try {
 		// Check if sendTelemetry method exists before calling
-		if ('sendTelemetry' in executeFunctions && typeof executeFunctions.sendTelemetry === 'function') {
+		if (
+			'sendTelemetry' in executeFunctions &&
+			typeof executeFunctions.sendTelemetry === 'function'
+		) {
 			executeFunctions.sendTelemetry(event, data);
 		}
 	} catch (error) {

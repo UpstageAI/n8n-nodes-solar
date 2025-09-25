@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-dirname-against-convention */
 import { ChatOpenAI } from '@langchain/openai';
 import {
 	type INodeType,
@@ -7,9 +6,7 @@ import {
 	type SupplyData,
 	type ILoadOptionsFunctions,
 	type INodePropertyOptions,
-	NodeConnectionType,
 } from 'n8n-workflow';
-
 
 import { N8nLlmTracing } from '../../utils/N8nLlmTracing';
 import { makeN8nLlmFailedAttemptHandler } from '../../utils/n8nLlmFailedAttemptHandler';
@@ -19,7 +16,6 @@ import { getConnectionHintNoticeField } from '../../utils/sharedFields';
 export class LmChatModelUpstage implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Solar Chat Model',
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-name-miscased
 		name: 'lmChatModelUpstage',
 		icon: 'file:upstage_v2.svg',
 		group: ['transform'],
@@ -43,7 +39,7 @@ export class LmChatModelUpstage implements INodeType {
 			},
 		},
 		inputs: [],
-		outputs: [NodeConnectionType.AiLanguageModel],
+		outputs: ['ai_languageModel'],
 		outputNames: ['Model'],
 		credentials: [
 			{
@@ -56,7 +52,7 @@ export class LmChatModelUpstage implements INodeType {
 			baseURL: 'https://api.upstage.ai/v1',
 		},
 		properties: [
-			getConnectionHintNoticeField([NodeConnectionType.AiChain, NodeConnectionType.AiAgent]),
+			getConnectionHintNoticeField(['ai_chain', 'ai_agent']),
 			{
 				displayName: 'Model',
 				name: 'model',
@@ -152,7 +148,9 @@ export class LmChatModelUpstage implements INodeType {
 
 	methods = {
 		loadOptions: {
-			async getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+			async getModels(
+				this: ILoadOptionsFunctions
+			): Promise<INodePropertyOptions[]> {
 				const credentials = await this.getCredentials('upstageApi');
 				const requestOptions = {
 					method: 'GET' as const,
@@ -165,7 +163,7 @@ export class LmChatModelUpstage implements INodeType {
 				try {
 					const response = await this.helpers.request(
 						'https://api.upstage.ai/v1/models',
-						requestOptions,
+						requestOptions
 					);
 
 					if (!response?.data || !Array.isArray(response.data)) {
@@ -176,10 +174,14 @@ export class LmChatModelUpstage implements INodeType {
 					// Filter for Solar models only, remove duplicates, and sort by version/date (latest first)
 					const solarModels = response.data
 						.filter((model: any) => model?.id?.toLowerCase().includes('solar'))
-						.map((model: any) => ({ name: model.id, value: model.id, ...model }))
+						.map((model: any) => ({
+							name: model.id,
+							value: model.id,
+							...model,
+						}))
 						.filter(
 							(model: any, index: number, self: any[]) =>
-								self.findIndex((m) => m.value === model.value) === index,
+								self.findIndex(m => m.value === model.value) === index
 						)
 						.sort((a: any, b: any) => {
 							const extractVersionInfo = (name: string) => {
@@ -221,10 +223,16 @@ export class LmChatModelUpstage implements INodeType {
 								return infoB.version! - infoA.version!;
 							}
 
-							if ((infoA.hasDate || infoA.hasVersion) && !(infoB.hasDate || infoB.hasVersion)) {
+							if (
+								(infoA.hasDate || infoA.hasVersion) &&
+								!(infoB.hasDate || infoB.hasVersion)
+							) {
 								return -1;
 							}
-							if ((infoB.hasDate || infoB.hasVersion) && !(infoA.hasDate || infoA.hasVersion)) {
+							if (
+								(infoB.hasDate || infoB.hasVersion) &&
+								!(infoA.hasDate || infoA.hasVersion)
+							) {
 								return 1;
 							}
 
@@ -262,7 +270,10 @@ export class LmChatModelUpstage implements INodeType {
 		},
 	};
 
-	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
+	async supplyData(
+		this: ISupplyDataFunctions,
+		itemIndex: number
+	): Promise<SupplyData> {
 		const credentials = await this.getCredentials('upstageApi');
 
 		let modelName = this.getNodeParameter('model', itemIndex) as string;
@@ -279,7 +290,7 @@ export class LmChatModelUpstage implements INodeType {
 
 				const response = await this.helpers.request(
 					'https://api.upstage.ai/v1/models',
-					requestOptions,
+					requestOptions
 				);
 
 				if (response?.data && Array.isArray(response.data)) {
@@ -326,10 +337,16 @@ export class LmChatModelUpstage implements INodeType {
 								return infoB.version! - infoA.version!;
 							}
 
-							if ((infoA.hasDate || infoA.hasVersion) && !(infoB.hasDate || infoB.hasVersion)) {
+							if (
+								(infoA.hasDate || infoA.hasVersion) &&
+								!(infoB.hasDate || infoB.hasVersion)
+							) {
 								return -1;
 							}
-							if ((infoB.hasDate || infoB.hasVersion) && !(infoA.hasDate || infoA.hasVersion)) {
+							if (
+								(infoB.hasDate || infoB.hasVersion) &&
+								!(infoA.hasDate || infoA.hasVersion)
+							) {
 								return 1;
 							}
 
@@ -359,11 +376,18 @@ export class LmChatModelUpstage implements INodeType {
 					}
 				}
 			} catch (error) {
-				console.warn('Failed to fetch models dynamically, using fallback:', error);
+				console.warn(
+					'Failed to fetch models dynamically, using fallback:',
+					error
+				);
 			}
 
 			if (!modelName) {
-				const fallbackModels = ['solar-pro2-preview', 'solar-pro', 'solar-mini'];
+				const fallbackModels = [
+					'solar-pro2-preview',
+					'solar-pro',
+					'solar-mini',
+				];
 				modelName = fallbackModels[0];
 				console.log(`🔄 Using fallback model: ${modelName}`);
 			}
@@ -388,10 +412,13 @@ export class LmChatModelUpstage implements INodeType {
 		const upstageTokensParser = (llmOutput: any) => {
 			const usage = llmOutput?.tokenUsage || llmOutput?.usage;
 			if (usage) {
-				const completionTokens = usage.completion_tokens || usage.completionTokens || 0;
+				const completionTokens =
+					usage.completion_tokens || usage.completionTokens || 0;
 				const promptTokens = usage.prompt_tokens || usage.promptTokens || 0;
 				const totalTokens =
-					usage.total_tokens || usage.totalTokens || completionTokens + promptTokens;
+					usage.total_tokens ||
+					usage.totalTokens ||
+					completionTokens + promptTokens;
 
 				console.log('🔍 Solar LLM Token Usage:', {
 					completionTokens,
@@ -407,7 +434,10 @@ export class LmChatModelUpstage implements INodeType {
 				};
 			}
 
-			console.log('⚠️ No token usage data found in Solar LLM response:', llmOutput);
+			console.log(
+				'⚠️ No token usage data found in Solar LLM response:',
+				llmOutput
+			);
 			return {
 				completionTokens: 0,
 				promptTokens: 0,
@@ -416,7 +446,9 @@ export class LmChatModelUpstage implements INodeType {
 		};
 
 		// Create tracing and failure handler using our implementations
-		const tracing = new N8nLlmTracing(this, { tokensUsageParser: upstageTokensParser });
+		const tracing = new N8nLlmTracing(this, {
+			tokensUsageParser: upstageTokensParser,
+		});
 		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
 		const modelConfig: any = {

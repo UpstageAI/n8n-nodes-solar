@@ -12,7 +12,7 @@ import { n8nDefaultFailedAttemptHandler } from './n8nDefaultFailedAttemptHandler
  */
 export const makeN8nLlmFailedAttemptHandler = (
 	ctx: ISupplyDataFunctions,
-	handler?: FailedAttemptHandler,
+	handler?: FailedAttemptHandler
 ): FailedAttemptHandler => {
 	return (error: any) => {
 		try {
@@ -23,9 +23,13 @@ export const makeN8nLlmFailedAttemptHandler = (
 			n8nDefaultFailedAttemptHandler(error);
 		} catch (e) {
 			// Wrap the error in a NodeApiError
-			const apiError = new NodeApiError(ctx.getNode(), e as unknown as JsonObject, {
-				functionality: 'configuration-node',
-			});
+			const apiError = new NodeApiError(
+				ctx.getNode(),
+				e as unknown as JsonObject,
+				{
+					functionality: 'configuration-node',
+				}
+			);
 
 			throw apiError;
 		}
@@ -37,9 +41,13 @@ export const makeN8nLlmFailedAttemptHandler = (
 		}
 
 		// If there are no retries left, throw the error wrapped in a NodeApiError
-		const apiError = new NodeApiError(ctx.getNode(), error as unknown as JsonObject, {
-			functionality: 'configuration-node',
-		});
+		const apiError = new NodeApiError(
+			ctx.getNode(),
+			error as unknown as JsonObject,
+			{
+				functionality: 'configuration-node',
+			}
+		);
 
 		throw apiError;
 	};

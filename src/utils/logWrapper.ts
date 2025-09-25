@@ -1,12 +1,9 @@
 import { Embeddings } from '@langchain/core/embeddings';
-import type {
+import {
 	IExecuteFunctions,
 	ISupplyDataFunctions,
 	NodeConnectionType,
-} from 'n8n-workflow';
-import {
 	NodeOperationError,
-	NodeConnectionType as NodeConnectionTypeEnum,
 } from 'n8n-workflow';
 
 import { logAiEvent } from './helpers';
@@ -19,7 +16,7 @@ export async function callMethodAsync<T>(
 		currentNodeRunIndex: number;
 		method: (...args: any[]) => Promise<unknown>;
 		arguments: unknown[];
-	},
+	}
 ): Promise<unknown> {
 	try {
 		return await parameters.method.call(this, ...parameters.arguments);
@@ -36,7 +33,7 @@ export async function callMethodAsync<T>(
 
 export function logWrapper<T extends Embeddings>(
 	originalInstance: T,
-	executeFunctions: IExecuteFunctions | ISupplyDataFunctions,
+	executeFunctions: IExecuteFunctions | ISupplyDataFunctions
 ): T {
 	return new Proxy(originalInstance, {
 		get: (target, prop) => {
@@ -45,7 +42,7 @@ export function logWrapper<T extends Embeddings>(
 				// Docs -> Embeddings
 				if (prop === 'embedDocuments' && 'embedDocuments' in target) {
 					return async (documents: string[]): Promise<number[][]> => {
-						const connectionType = NodeConnectionTypeEnum.AiEmbedding;
+						const connectionType = 'ai_embedding';
 						const { index } = executeFunctions.addInputData(connectionType, [
 							[{ json: { documents } }],
 						]);
@@ -59,14 +56,16 @@ export function logWrapper<T extends Embeddings>(
 						})) as number[][];
 
 						logAiEvent(executeFunctions, 'ai-document-embedded');
-						executeFunctions.addOutputData(connectionType, index, [[{ json: { response } }]]);
+						executeFunctions.addOutputData(connectionType, index, [
+							[{ json: { response } }],
+						]);
 						return response;
 					};
 				}
 				// Query -> Embeddings
 				if (prop === 'embedQuery' && 'embedQuery' in target) {
 					return async (query: string): Promise<number[]> => {
-						const connectionType = NodeConnectionTypeEnum.AiEmbedding;
+						const connectionType = 'ai_embedding';
 						const { index } = executeFunctions.addInputData(connectionType, [
 							[{ json: { query } }],
 						]);
@@ -79,7 +78,9 @@ export function logWrapper<T extends Embeddings>(
 							arguments: [query],
 						})) as number[];
 						logAiEvent(executeFunctions, 'ai-query-embedded');
-						executeFunctions.addOutputData(connectionType, index, [[{ json: { response } }]]);
+						executeFunctions.addOutputData(connectionType, index, [
+							[{ json: { response } }],
+						]);
 						return response;
 					};
 				}

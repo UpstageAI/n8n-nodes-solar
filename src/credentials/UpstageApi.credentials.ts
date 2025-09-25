@@ -10,7 +10,8 @@ export class UpstageApi implements ICredentialType {
 
 	displayName = 'Upstage API';
 
-	documentationUrl = 'https://console.upstage.ai/docs/getting-started/quick-start';
+	documentationUrl =
+		'https://console.upstage.ai/docs/getting-started/quick-start';
 
 	properties: INodeProperties[] = [
 		{

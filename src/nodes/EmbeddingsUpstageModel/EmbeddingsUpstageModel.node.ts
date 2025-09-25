@@ -4,7 +4,6 @@ import type {
 	INodeTypeDescription,
 	SupplyData,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 import { logWrapper } from '../../utils/logWrapper';
 import { getConnectionHintNoticeField } from '../../utils/sharedFields';
@@ -16,7 +15,8 @@ export class EmbeddingsUpstageModel implements INodeType {
 		icon: 'file:upstage_v2.svg',
 		group: ['transform'],
 		version: 1,
-			description: 'Embedding Model for Vector DB - Upstage Solar Embeddings. Supports up to 100 strings per request with max 204,800 total tokens. Each text should be under 4000 tokens (optimal: under 512 tokens).',
+		description:
+			'Embedding Model for Vector DB - Upstage Solar Embeddings. Supports up to 100 strings per request with max 204,800 total tokens. Each text should be under 4000 tokens (optimal: under 512 tokens).',
 		defaults: {
 			name: 'Upstage Embeddings Model',
 		},
@@ -33,10 +33,8 @@ export class EmbeddingsUpstageModel implements INodeType {
 				],
 			},
 		},
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-inputs-wrong-regular-node
 		inputs: [],
-		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
-		outputs: [NodeConnectionType.AiEmbedding],
+		outputs: ['ai_embedding'],
 		outputNames: ['Embeddings'],
 		credentials: [
 			{
@@ -45,7 +43,7 @@ export class EmbeddingsUpstageModel implements INodeType {
 			},
 		],
 		properties: [
-			getConnectionHintNoticeField([NodeConnectionType.AiVectorStore]),
+			getConnectionHintNoticeField(['ai_vectorStore']),
 			{
 				displayName: 'Model',
 				name: 'model',
@@ -68,7 +66,10 @@ export class EmbeddingsUpstageModel implements INodeType {
 		],
 	};
 
-	async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
+	async supplyData(
+		this: ISupplyDataFunctions,
+		itemIndex: number
+	): Promise<SupplyData> {
 		this.logger.debug('Supply data for embeddings');
 		const credentials = await this.getCredentials('upstageApi');
 		const model = this.getNodeParameter('model', itemIndex) as string;
@@ -104,15 +105,15 @@ class UpstageEmbeddings extends Embeddings {
 	public stripNewLines: boolean;
 
 	constructor(fields: UpstageEmbeddingsParams) {
-		const { apiKey, model, baseURL, batchSize, stripNewLines, ...rest } = fields;
+		const { apiKey, model, baseURL, batchSize, stripNewLines, ...rest } =
+			fields;
 		super(rest);
-		
+
 		this.apiKey = apiKey;
 		this.model = model;
 		this.baseURL = baseURL ?? 'https://api.upstage.ai/v1';
 		this.batchSize = batchSize ?? 100; // Upstage API limit
 		this.stripNewLines = stripNewLines ?? true; // LangChain default
-		
 	}
 
 	/**
@@ -120,7 +121,7 @@ class UpstageEmbeddings extends Embeddings {
 	 */
 	async embedDocuments(texts: string[]): Promise<number[][]> {
 		// Preprocess texts (strip newlines if enabled)
-		const processedTexts = this.stripNewLines 
+		const processedTexts = this.stripNewLines
 			? texts.map(text => text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim())
 			: texts;
 
@@ -131,7 +132,7 @@ class UpstageEmbeddings extends Embeddings {
 			const batchResults = await this.callUpstageAPI(batch);
 			results.push(...batchResults);
 		}
-		
+
 		return results;
 	}
 
@@ -140,10 +141,10 @@ class UpstageEmbeddings extends Embeddings {
 	 */
 	async embedQuery(text: string): Promise<number[]> {
 		// Preprocess text
-		const processedText = this.stripNewLines 
+		const processedText = this.stripNewLines
 			? text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
 			: text;
-		
+
 		const result = await this.callUpstageAPI([processedText]);
 		return result[0];
 	}
@@ -152,7 +153,9 @@ class UpstageEmbeddings extends Embeddings {
 		try {
 			// Validate and clean input
 			const cleanInput = input
-				.filter(text => text && typeof text === 'string' && text.trim().length > 0)
+				.filter(
+					text => text && typeof text === 'string' && text.trim().length > 0
+				)
 				.map(text => text.trim());
 
 			if (cleanInput.length === 0) {
@@ -161,14 +164,17 @@ class UpstageEmbeddings extends Embeddings {
 
 			// Check individual text length (Upstage limit: 4000 tokens per text)
 			for (const text of cleanInput) {
-				if (text.length > 16000) { // Rough estimate: ~4 chars per token
+				if (text.length > 16000) {
+					// Rough estimate: ~4 chars per token
 					// Text length might exceed token limit
 				}
 			}
 
 			// Check batch size (Upstage limit: 100 strings)
 			if (cleanInput.length > 100) {
-				throw new Error(`Too many texts: ${cleanInput.length}. Upstage API supports max 100 strings per request`);
+				throw new Error(
+					`Too many texts: ${cleanInput.length}. Upstage API supports max 100 strings per request`
+				);
 			}
 
 			// Use single string for single input, array for multiple
@@ -177,12 +183,11 @@ class UpstageEmbeddings extends Embeddings {
 				input: cleanInput.length === 1 ? cleanInput[0] : cleanInput,
 			};
 
-
 			const response = await fetch(`${this.baseURL}/embeddings`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					'Authorization': `Bearer ${this.apiKey}`,
+					Authorization: `Bearer ${this.apiKey}`,
 				},
 				body: JSON.stringify(requestBody),
 			});
@@ -193,22 +198,26 @@ class UpstageEmbeddings extends Embeddings {
 			}
 
 			const data: any = await response.json();
-			
+
 			if (!data.data || !Array.isArray(data.data)) {
 				throw new Error('Invalid response format from Upstage API');
 			}
 
 			// Sort by index to ensure correct order
 			const sortedData = data.data.sort((a: any, b: any) => a.index - b.index);
-			
+
 			// Ensure we return the same number of embeddings as input texts
 			if (sortedData.length !== cleanInput.length) {
-				throw new Error(`Expected ${cleanInput.length} embeddings, got ${sortedData.length}`);
+				throw new Error(
+					`Expected ${cleanInput.length} embeddings, got ${sortedData.length}`
+				);
 			}
-			
+
 			return sortedData.map((item: any) => item.embedding);
 		} catch (error) {
-			throw new Error(`Failed to generate embeddings: ${error instanceof Error ? error.message : String(error)}`);
+			throw new Error(
+				`Failed to generate embeddings: ${error instanceof Error ? error.message : String(error)}`
+			);
 		}
 	}
 }

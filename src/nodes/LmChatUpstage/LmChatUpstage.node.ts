@@ -5,7 +5,6 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 export class LmChatUpstage implements INodeType {
 	description: INodeTypeDescription = {
@@ -18,8 +17,8 @@ export class LmChatUpstage implements INodeType {
 		defaults: {
 			name: 'Upstage Solar LLM',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [
 			{
 				name: 'upstageApi',
@@ -116,7 +115,8 @@ export class LmChatUpstage implements INodeType {
 							maxValue: 2,
 							numberPrecision: 1,
 						},
-						description: 'Controls randomness in output. Higher values make output more random.',
+						description:
+							'Controls randomness in output. Higher values make output more random.',
 					},
 					{
 						displayName: 'Max Tokens',
@@ -161,11 +161,13 @@ export class LmChatUpstage implements INodeType {
 							{
 								name: 'High',
 								value: 'high',
-								description: 'Enable reasoning for complex tasks (may increase token usage)',
+								description:
+									'Enable reasoning for complex tasks (may increase token usage)',
 							},
 						],
 						default: 'low',
-						description: 'Controls the level of reasoning effort. Only applicable to Reasoning models.',
+						description:
+							'Controls the level of reasoning effort. Only applicable to Reasoning models.',
 					},
 					{
 						displayName: 'Frequency Penalty',
@@ -177,7 +179,8 @@ export class LmChatUpstage implements INodeType {
 							maxValue: 2,
 							numberPrecision: 2,
 						},
-						description: 'Controls model tendency to repeat tokens. Positive values reduce repetition, negative values allow more repetition.',
+						description:
+							'Controls model tendency to repeat tokens. Positive values reduce repetition, negative values allow more repetition.',
 					},
 					{
 						displayName: 'Presence Penalty',
@@ -189,7 +192,8 @@ export class LmChatUpstage implements INodeType {
 							maxValue: 2,
 							numberPrecision: 2,
 						},
-						description: 'Adjusts tendency to include tokens already present. Positive values encourage new ideas, negative values maintain consistency.',
+						description:
+							'Adjusts tendency to include tokens already present. Positive values encourage new ideas, negative values maintain consistency.',
 					},
 					{
 						displayName: 'Response Format',
@@ -209,11 +213,13 @@ export class LmChatUpstage implements INodeType {
 							{
 								name: 'JSON Schema',
 								value: 'json_schema',
-								description: 'Generate JSON with custom schema (structured outputs)',
+								description:
+									'Generate JSON with custom schema (structured outputs)',
 							},
 						],
 						default: 'text',
-						description: 'Format for model output. JSON formats only work with solar-pro2 model.',
+						description:
+							'Format for model output. JSON formats only work with solar-pro2 model.',
 					},
 					{
 						displayName: 'JSON Schema',
@@ -225,7 +231,8 @@ export class LmChatUpstage implements INodeType {
 							},
 						},
 						default: '{}',
-						description: 'JSON schema for structured outputs when using json_schema format',
+						description:
+							'JSON schema for structured outputs when using json_schema format',
 					},
 				],
 			},
@@ -239,7 +246,11 @@ export class LmChatUpstage implements INodeType {
 		for (let i = 0; i < items.length; i++) {
 			try {
 				const model = this.getNodeParameter('model', i) as string;
-				const messages = this.getNodeParameter('messages.message', i, []) as Array<{
+				const messages = this.getNodeParameter(
+					'messages.message',
+					i,
+					[]
+				) as Array<{
 					role: string;
 					content: string;
 				}>;
@@ -257,7 +268,9 @@ export class LmChatUpstage implements INodeType {
 
 				// Validate messages array
 				if (!messages || messages.length === 0) {
-					throw new Error('At least one message is required for chat completion');
+					throw new Error(
+						'At least one message is required for chat completion'
+					);
 				}
 
 				// Validate message content
@@ -266,7 +279,9 @@ export class LmChatUpstage implements INodeType {
 						throw new Error('All messages must have non-empty content');
 					}
 					if (!['system', 'user', 'assistant'].includes(message.role)) {
-						throw new Error(`Invalid message role: ${message.role}. Must be 'system', 'user', or 'assistant'`);
+						throw new Error(
+							`Invalid message role: ${message.role}. Must be 'system', 'user', or 'assistant'`
+						);
 					}
 				}
 
@@ -281,7 +296,10 @@ export class LmChatUpstage implements INodeType {
 				if (options.response_format && options.response_format !== 'text') {
 					if (options.response_format === 'json_object') {
 						requestBody.response_format = { type: 'json_object' };
-					} else if (options.response_format === 'json_schema' && options.json_schema) {
+					} else if (
+						options.response_format === 'json_schema' &&
+						options.json_schema
+					) {
 						try {
 							const schema = JSON.parse(options.json_schema);
 							requestBody.response_format = {
@@ -304,10 +322,14 @@ export class LmChatUpstage implements INodeType {
 					json: true,
 				};
 
+				// Note: Proxy configuration is handled at the n8n instance level
+				// Individual node proxy settings are not directly supported in n8n's HTTP helpers
+				// Users should configure proxy through n8n's global settings or environment
+
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
-					requestOptions,
+					requestOptions
 				);
 
 				// Handle streaming vs non-streaming response
@@ -322,7 +344,7 @@ export class LmChatUpstage implements INodeType {
 					// Extract the assistant's message
 					const choice = response.choices?.[0];
 					const content = choice?.message?.content || '';
-					
+
 					returnData.push({
 						json: {
 							content,
@@ -335,8 +357,9 @@ export class LmChatUpstage implements INodeType {
 					});
 				}
 			} catch (error) {
-				const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-				
+				const errorMessage =
+					error instanceof Error ? error.message : 'Unknown error';
+
 				// Log detailed error information
 				console.error('🚫 Upstage Solar LLM Error:', {
 					error: errorMessage,
@@ -346,15 +369,17 @@ export class LmChatUpstage implements INodeType {
 
 				if (this.continueOnFail()) {
 					returnData.push({
-						json: { 
+						json: {
 							error: errorMessage,
 							error_code: (error as any)?.code || 'unknown_error',
-							timestamp: new Date().toISOString()
+							timestamp: new Date().toISOString(),
 						},
 						pairedItem: { item: i },
 					});
 				} else {
-					throw new Error(`Upstage Solar LLM failed for item ${i}: ${errorMessage}`);
+					throw new Error(
+						`Upstage Solar LLM failed for item ${i}: ${errorMessage}`
+					);
 				}
 			}
 		}

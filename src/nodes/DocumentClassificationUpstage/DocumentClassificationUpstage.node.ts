@@ -5,19 +5,19 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 export class DocumentClassificationUpstage implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Upstage Document Classification',
 		name: 'documentClassificationUpstage',
 		icon: 'file:upstage_v2.svg',
-		group: ['transform', '@n8n/n8n-nodes-langchain'],
+		group: ['transform'],
 		version: 1,
-		description: 'Classify documents into predefined categories using Upstage Document Classification',
+		description:
+			'Classify documents into predefined categories using Upstage Document Classification',
 		defaults: { name: 'Upstage Document Classification' },
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [{ name: 'upstageApi', required: true }],
 		properties: [
 			{
@@ -37,7 +37,8 @@ export class DocumentClassificationUpstage implements INodeType {
 				type: 'string',
 				default: 'data',
 				placeholder: 'e.g. data, document, file',
-				description: 'Name of the input item binary property that contains the file',
+				description:
+					'Name of the input item binary property that contains the file',
 				displayOptions: { show: { inputType: ['binary'] } },
 			},
 			{
@@ -104,7 +105,8 @@ export class DocumentClassificationUpstage implements INodeType {
 								},
 								default: '',
 								placeholder: 'Brief description of this document type',
-								description: 'Natural language description to clarify the label',
+								description:
+									'Natural language description to clarify the label',
 							},
 						],
 					},
@@ -118,8 +120,10 @@ export class DocumentClassificationUpstage implements INodeType {
 					rows: 10,
 				},
 				default: '',
-				placeholder: '[\n  {\n    "const": "invoice",\n    "description": "A document requesting payment for goods or services"\n  },\n  {\n    "const": "receipt",\n    "description": "A document confirming payment has been made"\n  }\n]',
-				description: 'Raw JSON array defining the oneOf schema for classification',
+				placeholder:
+					'[\n  {\n    "const": "invoice",\n    "description": "A document requesting payment for goods or services"\n  },\n  {\n    "const": "receipt",\n    "description": "A document confirming payment has been made"\n  }\n]',
+				description:
+					'Raw JSON array defining the oneOf schema for classification',
 				displayOptions: { show: { schemaInputType: ['json'] } },
 			},
 			{
@@ -145,15 +149,22 @@ export class DocumentClassificationUpstage implements INodeType {
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
 				const schemaName = this.getNodeParameter('schemaName', i) as string;
-				const schemaInputType = this.getNodeParameter('schemaInputType', i) as string;
+				const schemaInputType = this.getNodeParameter(
+					'schemaInputType',
+					i
+				) as string;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
-				
+
 				// Get parameters based on schema input type
-				let categories: { values: Array<{ label: string; description: string }> } = { values: [] };
+				let categories: {
+					values: Array<{ label: string; description: string }>;
+				} = { values: [] };
 				let rawJsonSchema: string = '';
-				
+
 				if (schemaInputType === 'form') {
-					categories = this.getNodeParameter('categories', i) as { values: Array<{ label: string; description: string }> };
+					categories = this.getNodeParameter('categories', i) as {
+						values: Array<{ label: string; description: string }>;
+					};
 				} else {
 					rawJsonSchema = this.getNodeParameter('rawJsonSchema', i) as string;
 				}
@@ -162,17 +173,25 @@ export class DocumentClassificationUpstage implements INodeType {
 				let content: any[] = [];
 
 				if (inputType === 'binary') {
-					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+					const binaryPropertyName = this.getNodeParameter(
+						'binaryPropertyName',
+						i
+					) as string;
 					const item = items[i];
-					
+
 					if (!item.binary || !item.binary[binaryPropertyName]) {
-						throw new Error(`No binary data found in property "${binaryPropertyName}".`);
+						throw new Error(
+							`No binary data found in property "${binaryPropertyName}".`
+						);
 					}
 
 					const binaryData = item.binary[binaryPropertyName];
-					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+					const buffer = await this.helpers.getBinaryDataBuffer(
+						i,
+						binaryPropertyName
+					);
 					const base64Data = buffer.toString('base64');
-					
+
 					content = [
 						{
 							type: 'image_url',
@@ -186,7 +205,7 @@ export class DocumentClassificationUpstage implements INodeType {
 					if (!imageUrl) {
 						throw new Error('Image URL is required when input type is URL.');
 					}
-					
+
 					content = [
 						{
 							type: 'image_url',
@@ -199,7 +218,7 @@ export class DocumentClassificationUpstage implements INodeType {
 
 				// Build the JSON schema from categories or raw JSON
 				let oneOf: any[];
-				
+
 				if (schemaInputType === 'form') {
 					// Use form input categories
 					oneOf = categories.values.map(cat => ({
@@ -209,16 +228,20 @@ export class DocumentClassificationUpstage implements INodeType {
 				} else {
 					// Use raw JSON input
 					if (!rawJsonSchema) {
-						throw new Error('Raw JSON schema is required when input type is JSON.');
+						throw new Error(
+							'Raw JSON schema is required when input type is JSON.'
+						);
 					}
-					
+
 					try {
 						oneOf = JSON.parse(rawJsonSchema);
 						if (!Array.isArray(oneOf)) {
 							throw new Error('Raw JSON schema must be an array.');
 						}
 					} catch (parseError) {
-						throw new Error(`Invalid JSON format: ${(parseError as Error).message}`);
+						throw new Error(
+							`Invalid JSON format: ${(parseError as Error).message}`
+						);
 					}
 				}
 
@@ -255,7 +278,7 @@ export class DocumentClassificationUpstage implements INodeType {
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
-					requestOptions,
+					requestOptions
 				);
 
 				// Process response based on return mode
@@ -264,7 +287,10 @@ export class DocumentClassificationUpstage implements INodeType {
 					returnData.push({
 						json: {
 							classification,
-							confidence: response?.choices?.[0]?.finish_reason === 'stop' ? 'high' : 'low',
+							confidence:
+								response?.choices?.[0]?.finish_reason === 'stop'
+									? 'high'
+									: 'low',
 						},
 						pairedItem: { item: i },
 					});

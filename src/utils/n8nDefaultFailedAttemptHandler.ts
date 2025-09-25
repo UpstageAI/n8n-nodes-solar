@@ -8,17 +8,17 @@ export const n8nDefaultFailedAttemptHandler = (error: any) => {
 		// Network errors that might be temporary
 		return;
 	}
-	
+
 	if (error?.status >= 500 && error?.status < 600) {
 		// Server errors that might be temporary
 		return;
 	}
-	
+
 	if (error?.status === 429) {
 		// Rate limiting - should retry
 		return;
 	}
-	
+
 	// For all other errors, throw to stop retrying
 	throw error;
 };

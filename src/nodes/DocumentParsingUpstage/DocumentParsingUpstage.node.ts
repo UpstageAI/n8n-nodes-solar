@@ -5,7 +5,6 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 import FormData from 'form-data';
 
 export class DocumentParsingUpstage implements INodeType {
@@ -13,12 +12,13 @@ export class DocumentParsingUpstage implements INodeType {
 		displayName: 'Upstage Document Parsing',
 		name: 'documentParsingUpstage',
 		icon: 'file:upstage_v2.svg',
-		group: ['transform', '@n8n/n8n-nodes-langchain'],
+		group: ['transform'],
 		version: 1,
-		description: 'Convert documents into structured HTML/Markdown using Upstage Document Parse',
+		description:
+			'Convert documents into structured HTML/Markdown using Upstage Document Parse',
 		defaults: { name: 'Upstage Document Parsing' },
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [{ name: 'upstageApi', required: true }],
 		properties: [
 			{
@@ -39,7 +39,8 @@ export class DocumentParsingUpstage implements INodeType {
 				type: 'string',
 				default: 'data',
 				placeholder: 'e.g. data, document, file',
-				description: 'Name of the input item binary property that contains the file',
+				description:
+					'Name of the input item binary property that contains the file',
 				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
 			},
 			{
@@ -120,19 +121,35 @@ export class DocumentParsingUpstage implements INodeType {
 				const operation = this.getNodeParameter('operation', i) as string;
 
 				if (operation === 'sync' || operation === 'asyncSubmit') {
-					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+					const binaryPropertyName = this.getNodeParameter(
+						'binaryPropertyName',
+						i
+					) as string;
 					const model = this.getNodeParameter('model', i) as string;
 					const ocr = this.getNodeParameter('ocr', i) as string;
-					const base64Categories = this.getNodeParameter('base64Categories', i, []) as string[];
-					const mergeMultipage = this.getNodeParameter('merge_multipage_tables', i, false) as boolean;
+					const base64Categories = this.getNodeParameter(
+						'base64Categories',
+						i,
+						[]
+					) as string[];
+					const mergeMultipage = this.getNodeParameter(
+						'merge_multipage_tables',
+						i,
+						false
+					) as boolean;
 
 					const item = items[i];
 					if (!item.binary || !item.binary[binaryPropertyName]) {
-						throw new Error(`No binary data found in property "${binaryPropertyName}".`);
+						throw new Error(
+							`No binary data found in property "${binaryPropertyName}".`
+						);
 					}
 
 					const binaryData = item.binary[binaryPropertyName];
-					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+					const buffer = await this.helpers.getBinaryDataBuffer(
+						i,
+						binaryPropertyName
+					);
 
 					// --- FormData stream configuration ---
 					const form = new FormData();
@@ -157,27 +174,40 @@ export class DocumentParsingUpstage implements INodeType {
 					const requestOptions: IHttpRequestOptions = {
 						method: 'POST',
 						url,
-						body: form as unknown as any,      // stream
-						headers: form.getHeaders(),        // include boundary
-						json: false,                       // not JSON
+						body: form as unknown as any, // stream
+						headers: form.getHeaders(), // include boundary
+						json: false, // not JSON
 					};
 
-					const response = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions,
-					);
+					const response =
+						await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'upstageApi',
+							requestOptions
+						);
 
 					if (operation === 'sync') {
 						const returnMode = this.getNodeParameter('returnMode', i) as string;
 						if (returnMode === 'content_html') {
-							returnData.push({ json: { html: response?.content?.html ?? '' }, pairedItem: { item: i } });
+							returnData.push({
+								json: { html: response?.content?.html ?? '' },
+								pairedItem: { item: i },
+							});
 						} else if (returnMode === 'content_markdown') {
-							returnData.push({ json: { markdown: response?.content?.markdown ?? '' }, pairedItem: { item: i } });
+							returnData.push({
+								json: { markdown: response?.content?.markdown ?? '' },
+								pairedItem: { item: i },
+							});
 						} else if (returnMode === 'content_text') {
-							returnData.push({ json: { text: response?.content?.text ?? '' }, pairedItem: { item: i } });
+							returnData.push({
+								json: { text: response?.content?.text ?? '' },
+								pairedItem: { item: i },
+							});
 						} else if (returnMode === 'elements') {
-							returnData.push({ json: { elements: response?.elements ?? [] }, pairedItem: { item: i } });
+							returnData.push({
+								json: { elements: response?.elements ?? [] },
+								pairedItem: { item: i },
+							});
 						} else {
 							returnData.push({ json: response, pairedItem: { item: i } });
 						}
@@ -194,22 +224,24 @@ export class DocumentParsingUpstage implements INodeType {
 						method: 'GET',
 						url: `https://api.upstage.ai/v1/document-digitization/requests/${encodeURIComponent(requestId)}`,
 					};
-					const response = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions,
-					);
+					const response =
+						await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'upstageApi',
+							requestOptions
+						);
 					returnData.push({ json: response, pairedItem: { item: i } });
 				} else if (operation === 'asyncList') {
 					const requestOptions: IHttpRequestOptions = {
 						method: 'GET',
 						url: 'https://api.upstage.ai/v1/document-digitization/requests',
 					};
-					const response = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions,
-					);
+					const response =
+						await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'upstageApi',
+							requestOptions
+						);
 					returnData.push({ json: response, pairedItem: { item: i } });
 				}
 			} catch (error) {

@@ -36,3 +36,7 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# pnpm
+pnpm-lock.yaml
+pnpm-debug.log*

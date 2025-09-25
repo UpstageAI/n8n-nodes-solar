@@ -1,7 +1,6 @@
 import type { ISupplyDataFunctions } from 'n8n-workflow';
 import { N8nLlmTracing } from './N8nLlmTracing';
 import { makeN8nLlmFailedAttemptHandler } from './n8nLlmFailedAttemptHandler';
-import { getHttpProxyAgent as getHttpProxyAgentImpl } from './httpProxyAgent';
 import { getConnectionHintNoticeField as getConnectionHintNoticeFieldImpl } from './sharedFields';
 
 /**
@@ -22,7 +21,9 @@ export function createN8nLlmTracing(
 /**
  * Creates failure attempt handler using our implementation
  */
-export function createN8nLlmFailedAttemptHandler(context: ISupplyDataFunctions) {
+export function createN8nLlmFailedAttemptHandler(
+	context: ISupplyDataFunctions
+) {
 	try {
 		return makeN8nLlmFailedAttemptHandler(context);
 	} catch (error) {
