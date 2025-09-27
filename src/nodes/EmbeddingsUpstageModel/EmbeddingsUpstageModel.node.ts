@@ -23,7 +23,7 @@ export class EmbeddingsUpstageModel implements INodeType {
 		codex: {
 			categories: ['AI'],
 			subcategories: {
-				AI: ['Embeddings', 'Root Nodes'],
+				AI: ['Embeddings'],
 			},
 			resources: {
 				primaryDocumentation: [
