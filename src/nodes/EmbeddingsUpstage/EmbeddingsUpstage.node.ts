@@ -5,7 +5,6 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 export class EmbeddingsUpstage implements INodeType {
 	description: INodeTypeDescription = {
@@ -14,12 +13,13 @@ export class EmbeddingsUpstage implements INodeType {
 		icon: 'file:upstage_v2.svg',
 		group: ['transform'],
 		version: 1,
-			description: 'Generate embeddings using Upstage Solar embedding models. Supports up to 100 strings per request with max 204,800 total tokens. Each text should be under 4000 tokens (optimal: under 512 tokens).',
+		description:
+			'Generate embeddings using Upstage Solar embedding models. Supports up to 100 strings per request with max 204,800 total tokens. Each text should be under 4000 tokens (optimal: under 512 tokens).',
 		defaults: {
 			name: 'Upstage Embeddings',
 		},
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [
 			{
 				name: 'upstageApi',
@@ -75,7 +75,7 @@ export class EmbeddingsUpstage implements INodeType {
 					},
 				},
 				default: '',
-				placeholder: 'Enter text to embed',
+				placeholder: 'e.g. Hello world, How are you?',
 				description: 'The text to generate embeddings for',
 			},
 			{
@@ -91,8 +91,9 @@ export class EmbeddingsUpstage implements INodeType {
 					rows: 5,
 				},
 				default: '',
-				placeholder: 'Enter texts separated by newlines',
-				description: 'Multiple texts to generate embeddings for (one per line). Max 100 texts, total 204,800 tokens. Each text max 4000 tokens.',
+				placeholder: 'e.g. Hello world\nHow are you?\nGood morning',
+				description:
+					'Multiple texts to generate embeddings for (one per line). Max 100 texts, total 204,800 tokens. Each text max 4000 tokens.',
 			},
 			{
 				displayName: 'Text Field',
@@ -104,8 +105,9 @@ export class EmbeddingsUpstage implements INodeType {
 					},
 				},
 				default: '',
-				placeholder: 'Optional: field name containing text',
-				description: 'Field name from input data containing the text to embed (if empty, uses the "text" parameter above)',
+				placeholder: 'e.g. data, content, message',
+				description:
+					'Field name from input data containing the text to embed (if empty, uses the "text" parameter above)',
 			},
 		],
 	};
@@ -157,7 +159,7 @@ export class EmbeddingsUpstage implements INodeType {
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
-					requestOptions,
+					requestOptions
 				);
 
 				// Process response

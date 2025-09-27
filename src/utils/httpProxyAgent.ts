@@ -1,11 +1,13 @@
-import { HttpsProxyAgent } from 'https-proxy-agent';
-
-export function getHttpProxyAgent() {
-	const httpProxy =
-		process.env.HTTPS_PROXY ??
-		process.env.https_proxy ??
-		process.env.HTTP_PROXY ??
-		process.env.http_proxy;
-
-	return httpProxy ? new HttpsProxyAgent(httpProxy) : undefined;
+/**
+ * Get HTTP proxy agent for requests
+ * Note: n8n community nodes should not directly access process.env
+ * Proxy configuration should be handled at the n8n instance level
+ * This function is kept for compatibility but returns undefined
+ * @deprecated Use n8n's global proxy settings instead
+ */
+export function getHttpProxyAgent(): undefined {
+	// n8n community nodes should not directly access process.env
+	// Proxy configuration is handled at the n8n instance level
+	// Users should configure proxy through n8n's global settings
+	return undefined;
 }

@@ -22,7 +22,9 @@ export function createN8nLlmTracing(
 /**
  * Creates failure attempt handler using our implementation
  */
-export function createN8nLlmFailedAttemptHandler(context: ISupplyDataFunctions) {
+export function createN8nLlmFailedAttemptHandler(
+	context: ISupplyDataFunctions
+) {
 	try {
 		return makeN8nLlmFailedAttemptHandler(context);
 	} catch (error) {

@@ -5,28 +5,32 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import { NodeConnectionType } from 'n8n-workflow';
 
 export class InformationExtractionUpstage implements INodeType {
-	// JSON 구조 검증 및 수정 메서드
+	// JSON structure validation and fix method
 	private static validateAndFixJsonStructure(jsonString: string): string {
 		try {
 			console.log('=== JSON Structure Analysis ===');
 			console.log('Original length:', jsonString.length);
-			console.log('Last 20 chars:', jsonString.substring(jsonString.length - 20));
-			
-			// 1단계: 기본 괄호 균형 검사
+			console.log(
+				'Last 20 chars:',
+				jsonString.substring(jsonString.length - 20)
+			);
+
+			// Step 1: Basic bracket balance check
 			const openBraces = (jsonString.match(/\{/g) || []).length;
 			const closeBraces = (jsonString.match(/\}/g) || []).length;
 			const openBrackets = (jsonString.match(/\[/g) || []).length;
 			const closeBrackets = (jsonString.match(/\]/g) || []).length;
-			
-			console.log(`Brace balance: {${openBraces}} {${closeBraces}}, [${openBrackets}] [${closeBrackets}]`);
-			
-			// 2단계: 구조적 분석 및 수정
+
+			console.log(
+				`Brace balance: {${openBraces}} {${closeBraces}}, [${openBrackets}] [${closeBrackets}]`
+			);
+
+			// Step 2: Structural analysis and modification
 			let fixedJson = jsonString;
-			
-			// 중괄호 불균형 수정
+
+			// Fix brace imbalance
 			if (openBraces > closeBraces) {
 				const missingBraces = openBraces - closeBraces;
 				console.log(`Adding ${missingBraces} missing closing braces`);
@@ -34,10 +38,13 @@ export class InformationExtractionUpstage implements INodeType {
 			} else if (closeBraces > openBraces) {
 				const extraBraces = closeBraces - openBraces;
 				console.log(`Removing ${extraBraces} extra closing braces`);
-				fixedJson = fixedJson.replace(/\}+$/, '}'.repeat(closeBraces - extraBraces));
+				fixedJson = fixedJson.replace(
+					/\}+$/,
+					'}'.repeat(closeBraces - extraBraces)
+				);
 			}
-			
-			// 대괄호 불균형 수정
+
+			// Fix bracket imbalance
 			if (openBrackets > closeBrackets) {
 				const missingBrackets = openBrackets - closeBrackets;
 				console.log(`Adding ${missingBrackets} missing closing brackets`);
@@ -45,53 +52,62 @@ export class InformationExtractionUpstage implements INodeType {
 			} else if (closeBrackets > openBrackets) {
 				const extraBrackets = closeBrackets - openBrackets;
 				console.log(`Removing ${extraBrackets} extra closing brackets`);
-				fixedJson = fixedJson.replace(/\]+$/, ']'.repeat(closeBrackets - extraBrackets));
+				fixedJson = fixedJson.replace(
+					/\]+$/,
+					']'.repeat(closeBrackets - extraBrackets)
+				);
 			}
-			
-			// 3단계: JSON 유효성 검사
+
+			// Step 3: JSON validation
 			try {
 				const parsed = JSON.parse(fixedJson);
 				console.log('JSON structure fixed successfully');
 				console.log('Fixed length:', fixedJson.length);
-				console.log('Last 20 chars after fix:', fixedJson.substring(fixedJson.length - 20));
+				console.log(
+					'Last 20 chars after fix:',
+					fixedJson.substring(fixedJson.length - 20)
+				);
 				return fixedJson;
 			} catch (parseError) {
-				console.log('Still invalid after basic fix:', (parseError as Error).message);
-				
-				// 4단계: 고급 수정 시도
+				console.log(
+					'Still invalid after basic fix:',
+					(parseError as Error).message
+				);
+
+				// Step 4: Advanced modification attempt
 				fixedJson = InformationExtractionUpstage.advancedJsonFix(fixedJson);
-				
-				// 5단계: 최종 검증
+
+				// Step 5: Final validation
 				try {
 					JSON.parse(fixedJson);
 					console.log('Advanced fix successful');
 					return fixedJson;
 				} catch (finalError) {
 					console.log('Advanced fix failed:', (finalError as Error).message);
-					return jsonString; // 원본 반환
+					return jsonString; // Return original
 				}
 			}
 		} catch (error) {
 			console.log('Could not fix JSON structure:', (error as Error).message);
-			return jsonString; // 원본 반환
+			return jsonString; // Return original
 		}
 	}
-	
-	// 고급 JSON 수정 메서드
+
+	// Advanced JSON modification method
 	private static advancedJsonFix(jsonString: string): string {
 		console.log('=== Advanced JSON Fix ===');
-		
-		// 특정 패턴 수정: properties 객체가 제대로 닫히지 않은 경우
+
+		// Fix specific pattern: when properties object is not properly closed
 		// "properties":{...}}}} -> "properties":{...}}}}
 		const propertiesPattern = /("properties":\{[^}]*)\}\}\}\}/g;
 		if (propertiesPattern.test(jsonString)) {
 			console.log('Fixing properties object closure');
 			jsonString = jsonString.replace(propertiesPattern, '$1}}}');
 		}
-		
-		// 다른 일반적인 패턴들
-		// 연속된 닫는 괄호 정리
-		jsonString = jsonString.replace(/\}\}\}+/g, (match) => {
+
+		// Other common patterns
+		// Clean up consecutive closing brackets
+		jsonString = jsonString.replace(/\}\}\}+/g, match => {
 			const count = match.length;
 			if (count > 2) {
 				console.log(`Reducing ${count} consecutive closing braces to 2`);
@@ -99,22 +115,23 @@ export class InformationExtractionUpstage implements INodeType {
 			}
 			return match;
 		});
-		
+
 		return jsonString;
 	}
 	description: INodeTypeDescription = {
 		displayName: 'Upstage Information Extraction',
 		name: 'informationExtractionUpstage',
 		icon: 'file:upstage_v2.svg',
-		group: ['transform', '@n8n/n8n-nodes-langchain'],
+		group: ['transform'],
 		version: 1,
-		description: 'Extract structured data from documents/images using Upstage Information Extraction',
+		description:
+			'Extract structured data from documents/images using Upstage Information Extraction',
 		defaults: { name: 'Upstage Information Extraction' },
-		inputs: [NodeConnectionType.Main],
-		outputs: [NodeConnectionType.Main],
+		inputs: ['main'],
+		outputs: ['main'],
 		credentials: [{ name: 'upstageApi', required: true }],
 		properties: [
-			// 입력 방식
+			// Input method
 			{
 				displayName: 'Input Type',
 				name: 'inputType',
@@ -126,7 +143,7 @@ export class InformationExtractionUpstage implements INodeType {
 				default: 'binary',
 			},
 
-			// 바이너리일 때
+			// When binary
 			{
 				displayName: 'Binary Property',
 				name: 'binaryPropertyName',
@@ -137,28 +154,31 @@ export class InformationExtractionUpstage implements INodeType {
 				displayOptions: { show: { inputType: ['binary'] } },
 			},
 
-			// URL일 때
+			// When URL
 			{
 				displayName: 'Image URL',
 				name: 'imageUrl',
 				type: 'string',
 				default: '',
-				placeholder: 'https://example.com/sample.png',
+				placeholder: 'e.g. https://example.com/sample.png',
 				displayOptions: { show: { inputType: ['url'] } },
 			},
 
-			// 모델
+			// Model
 			{
 				displayName: 'Model',
 				name: 'model',
 				type: 'options',
 				options: [
-					{ name: 'information-extract (recommended)', value: 'information-extract' },
+					{
+						name: 'information-extract (recommended)',
+						value: 'information-extract',
+					},
 				],
 				default: 'information-extract',
 			},
 
-			// JSON 스키마
+			// JSON schema
 			{
 				displayName: 'Schema Input Type',
 				name: 'schemaInputType',
@@ -190,22 +210,25 @@ export class InformationExtractionUpstage implements INodeType {
 				displayName: 'Full Response Format JSON',
 				name: 'fullResponseFormat',
 				type: 'json',
-				default: '{"type":"json_schema","json_schema":{"name":"document_schema","schema":{"type":"object","properties":{}}}}',
-				description: 'Complete response_format JSON (including type, json_schema, name, and schema)',
+				default:
+					'{"type":"json_schema","json_schema":{"name":"document_schema","schema":{"type":"object","properties":{}}}}',
+				description:
+					'Complete response_format JSON (including type, json_schema, name, and schema)',
 				displayOptions: { show: { schemaInputType: ['full'] } },
 			},
 
-			// Chunking 옵션
+			// Chunking options
 			{
 				displayName: 'Pages per Chunk',
 				name: 'pagesPerChunk',
 				type: 'number',
 				default: 0,
 				typeOptions: { minValue: 0 },
-				description: 'Chunk pages to improve performance (recommended for 30+ pages). 0 to disable.',
+				description:
+					'Chunk pages to improve performance (recommended for 30+ pages). 0 to disable.',
 			},
 
-			// 반환 방식
+			// Return mode
 			{
 				displayName: 'Return',
 				name: 'returnMode',
@@ -227,24 +250,33 @@ export class InformationExtractionUpstage implements INodeType {
 			try {
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
-				const schemaInputType = this.getNodeParameter('schemaInputType', i) as string;
-				const pagesPerChunk = this.getNodeParameter('pagesPerChunk', i, 0) as number;
+				const schemaInputType = this.getNodeParameter(
+					'schemaInputType',
+					i
+				) as string;
+				const pagesPerChunk = this.getNodeParameter(
+					'pagesPerChunk',
+					i,
+					0
+				) as number;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
-				// 스키마 파싱
+				// Schema parsing
 				let responseFormat: any;
 				let schemaName: string;
 				let schemaObj: any;
 
 				if (schemaInputType === 'schema') {
-					// Schema Only 모드
+					// Schema Only mode
 					schemaName = this.getNodeParameter('schemaName', i) as string;
 					const schemaRaw = this.getNodeParameter('json_schema', i);
-					
+
 					try {
 						if (typeof schemaRaw === 'string') {
-							// JSON 클렌징: 앞뒤 공백 제거 및 보이지 않는 문자 제거
-							const cleanedJson = schemaRaw.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+							// JSON cleaning: remove leading/trailing spaces and invisible characters
+							const cleanedJson = schemaRaw
+								.trim()
+								.replace(/[\u200B-\u200D\uFEFF]/g, '');
 							schemaObj = JSON.parse(cleanedJson);
 						} else if (typeof schemaRaw === 'object' && schemaRaw !== null) {
 							schemaObj = schemaRaw;
@@ -252,7 +284,9 @@ export class InformationExtractionUpstage implements INodeType {
 							throw new Error('Invalid schema data type');
 						}
 					} catch (error) {
-						throw new Error(`Invalid JSON schema provided: ${(error as Error).message}`);
+						throw new Error(
+							`Invalid JSON schema provided: ${(error as Error).message}`
+						);
 					}
 
 					responseFormat = {
@@ -263,78 +297,98 @@ export class InformationExtractionUpstage implements INodeType {
 						},
 					};
 				} else {
-					// Full Response Format 모드
-					const fullResponseRaw = this.getNodeParameter('fullResponseFormat', i);
-					
+					// Full Response Format mode
+					const fullResponseRaw = this.getNodeParameter(
+						'fullResponseFormat',
+						i
+					);
+
 					try {
 						if (typeof fullResponseRaw === 'string') {
-							// 1단계: 기본 클렌징 (보이지 않는 문자만 제거)
+							// Step 1: Basic cleaning (remove only invisible characters)
 							let cleanedJson = fullResponseRaw
-								.trim() // 앞뒤 공백 제거
-								.replace(/[\u200B-\u200D\uFEFF]/g, '') // BOM 및 zero-width 문자 제거
-								.replace(/\r\n/g, '\n') // Windows 줄바꿈 정규화
-								.replace(/\r/g, '\n'); // Mac 줄바꿈 정규화
-							
-							// 2단계: JSON 유효성 검사 및 포맷 감지
+								.trim() // Remove leading/trailing spaces
+								.replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove BOM and zero-width characters
+								.replace(/\r\n/g, '\n') // Normalize Windows line breaks
+								.replace(/\r/g, '\n'); // Normalize Mac line breaks
+
+							// Step 2: JSON validation and format detection
 							let parsedJson;
 							try {
-								// 먼저 원본 그대로 파싱 시도
+								// First try parsing as original
 								parsedJson = JSON.parse(cleanedJson);
 							} catch (firstError) {
-								// 실패하면 압축된 JSON으로 간주하고 추가 클렌징
-								console.log('First parse failed, trying compressed JSON cleaning...');
+								// If failed, consider as compressed JSON and do additional cleaning
+								console.log(
+									'First parse failed, trying compressed JSON cleaning...'
+								);
 								console.log('Original error:', (firstError as Error).message);
-								
+
 								cleanedJson = cleanedJson
-									.replace(/\n/g, '') // 모든 줄바꿈 제거
-									.replace(/\s+/g, ' ') // 연속 공백을 하나로
-									.replace(/\s*([{}[\]":,])/g, '$1') // JSON 구분자 앞 공백 제거
-									.replace(/([{}[\]":,])\s*/g, '$1') // JSON 구분자 뒤 공백 제거
-									.trim(); // 최종 공백 제거
-								
-								// JSON 구조 검증 및 수정 시도
-								cleanedJson = InformationExtractionUpstage.validateAndFixJsonStructure(cleanedJson);
-								
+									.replace(/\n/g, '') // Remove all line breaks
+									.replace(/\s+/g, ' ') // Replace consecutive spaces with single space
+									.replace(/\s*([{}[\]":,])/g, '$1') // Remove spaces before JSON separators
+									.replace(/([{}[\]":,])\s*/g, '$1') // Remove spaces after JSON separators
+									.trim(); // Final space removal
+
+								// Attempt JSON structure validation and modification
+								cleanedJson =
+									InformationExtractionUpstage.validateAndFixJsonStructure(
+										cleanedJson
+									);
+
 								parsedJson = JSON.parse(cleanedJson);
 							}
-							
-							// 3단계: JSON 객체 검증
+
+							// Step 3: JSON object validation
 							if (typeof parsedJson !== 'object' || parsedJson === null) {
 								throw new Error('Parsed result is not a valid JSON object');
 							}
-							
-							// 4단계: 필수 구조 검증
+
+							// Step 4: Required structure validation
 							if (!parsedJson.type || !parsedJson.json_schema) {
 								throw new Error('Missing required fields: type or json_schema');
 							}
-							
+
 							responseFormat = parsedJson;
-							
-							// 디버깅 로그
+
+							// Debug logging
 							console.log('JSON parsing successful');
 							console.log('Type:', parsedJson.type);
 							console.log('Schema name:', parsedJson.json_schema?.name);
-							
-						} else if (typeof fullResponseRaw === 'object' && fullResponseRaw !== null) {
+						} else if (
+							typeof fullResponseRaw === 'object' &&
+							fullResponseRaw !== null
+						) {
 							responseFormat = fullResponseRaw;
 						} else {
 							throw new Error('Invalid response format data type');
 						}
 					} catch (error) {
-						throw new Error(`Invalid full response format JSON provided: ${(error as Error).message}`);
+						throw new Error(
+							`Invalid full response format JSON provided: ${(error as Error).message}`
+						);
 					}
 				}
 
-				// messages 구성
+				// Compose messages
 				let dataUrlOrHttp: string;
 				if (inputType === 'binary') {
-					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
+					const binaryPropertyName = this.getNodeParameter(
+						'binaryPropertyName',
+						i
+					) as string;
 					const item = items[i];
 					if (!item.binary || !item.binary[binaryPropertyName]) {
-						throw new Error(`No binary data found in property "${binaryPropertyName}".`);
+						throw new Error(
+							`No binary data found in property "${binaryPropertyName}".`
+						);
 					}
 					const binaryData = item.binary[binaryPropertyName];
-					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+					const buffer = await this.helpers.getBinaryDataBuffer(
+						i,
+						binaryPropertyName
+					);
 					const mime = binaryData.mimeType || 'application/octet-stream';
 					const base64 = buffer.toString('base64');
 					dataUrlOrHttp = `data:${mime};base64,${base64}`;
@@ -359,7 +413,7 @@ export class InformationExtractionUpstage implements INodeType {
 					response_format: responseFormat,
 				};
 
-				// chunking 옵션 (선택)
+				// chunking options (optional)
 				if (pagesPerChunk && pagesPerChunk > 0) {
 					requestBody.chunking = { pages_per_chunk: pagesPerChunk };
 				}
@@ -374,19 +428,19 @@ export class InformationExtractionUpstage implements INodeType {
 				const response = await this.helpers.httpRequestWithAuthentication.call(
 					this,
 					'upstageApi',
-					requestOptions,
+					requestOptions
 				);
 
 				if (returnMode === 'full') {
 					returnData.push({ json: response, pairedItem: { item: i } });
 				} else {
-					// Extracted JSON 파싱
+					// Parse extracted JSON
 					const content = response?.choices?.[0]?.message?.content ?? '';
 					let extracted: any;
 					try {
 						extracted = content ? JSON.parse(content) : {};
 					} catch {
-						// 콘텐츠가 JSON 문자열이 아닐 수 있으므로, 실패 시 원문 반환
+						// Content may not be JSON string, so return original text on failure
 						extracted = { _raw: content };
 					}
 

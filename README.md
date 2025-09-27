@@ -152,4 +152,4 @@ MIT License - see LICENSE file for details.
 - [Upstage Console](https://console.upstage.ai/)
 - [Solar LLM Documentation](https://developers.upstage.ai/docs/apis/chat)
 - [n8n Community Nodes](https://docs.n8n.io/integrations/community-nodes/)
-- [GitHub Repository](https://github.com/yourusername/n8n-nodes-solar)
+- [GitHub Repository](https://github.com/UpstageAI/n8n-nodes-solar)
