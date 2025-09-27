@@ -31,7 +31,8 @@
       "Bash(git remote add:*)",
       "Bash(gh pr close:*)",
       "Bash(npm audit:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(npm test)"
     ],
     "deny": []
   }
