@@ -61,9 +61,9 @@ export class DocumentParsingUpstage implements INodeType {
 				options: [
 					{ name: 'Auto', value: 'auto' },
 					{ name: 'Force', value: 'force' },
-					{ name: 'Off', value: 'off' },
 				],
 				default: 'auto',
+				description: 'Whether to perform OCR inference on the document before layout detection. Auto applies OCR only to image documents; Force always performs OCR.',
 				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
 			},
 			{
@@ -85,6 +85,35 @@ export class DocumentParsingUpstage implements INodeType {
 				name: 'merge_multipage_tables',
 				type: 'boolean',
 				default: false,
+				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
+			},
+			{
+				displayName: 'Output Formats',
+				name: 'outputFormats',
+				type: 'multiOptions',
+				options: [
+					{ name: 'HTML', value: 'html' },
+					{ name: 'Markdown', value: 'markdown' },
+					{ name: 'Text', value: 'text' },
+				],
+				default: ['html'],
+				description: 'Specify which formats to include in the response. Each layout element will be formatted according to these formats.',
+				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
+			},
+			{
+				displayName: 'Include Coordinates',
+				name: 'coordinates',
+				type: 'boolean',
+				default: true,
+				description: 'Whether to return coordinates of bounding boxes of each layout element',
+				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
+			},
+			{
+				displayName: 'Chart Recognition',
+				name: 'chartRecognition',
+				type: 'boolean',
+				default: true,
+				description: 'Whether to use chart recognition. If true, charts are converted to tables.',
 				displayOptions: { show: { operation: ['sync', 'asyncSubmit'] } },
 			},
 			{
@@ -137,6 +166,21 @@ export class DocumentParsingUpstage implements INodeType {
 						i,
 						false
 					) as boolean;
+					const outputFormats = this.getNodeParameter(
+						'outputFormats',
+						i,
+						['html']
+					) as string[];
+					const coordinates = this.getNodeParameter(
+						'coordinates',
+						i,
+						true
+					) as boolean;
+					const chartRecognition = this.getNodeParameter(
+						'chartRecognition',
+						i,
+						true
+					) as boolean;
 
 					const item = items[i];
 					if (!item.binary || !item.binary[binaryPropertyName]) {
@@ -159,6 +203,9 @@ export class DocumentParsingUpstage implements INodeType {
 					});
 					form.append('model', model);
 					form.append('ocr', ocr);
+					form.append('output_formats', JSON.stringify(outputFormats));
+					form.append('coordinates', coordinates.toString());
+					form.append('chart_recognition', chartRecognition.toString());
 					if (base64Categories.length > 0) {
 						form.append('base64_encoding', JSON.stringify(base64Categories));
 					}

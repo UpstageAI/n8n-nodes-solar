@@ -7,7 +7,6 @@ export { EmbeddingsUpstage } from './nodes/EmbeddingsUpstage/EmbeddingsUpstage.n
 export { DocumentParsingUpstage } from './nodes/DocumentParsingUpstage/DocumentParsingUpstage.node';
 export { DocumentOCRUpstage } from './nodes/DocumentOCRUpstage/DocumentOCRUpstage.node';
 export { InformationExtractionUpstage } from './nodes/InformationExtractionUpstage/InformationExtractionUpstage.node';
-export { InformationExtractionSchemaUpstage } from './nodes/InformationExtractionSchemaUpstage/InformationExtractionSchemaUpstage.node';
 export { DocumentClassificationUpstage } from './nodes/DocumentClassificationUpstage/DocumentClassificationUpstage.node';
 
 // Export LangChain compatible nodes

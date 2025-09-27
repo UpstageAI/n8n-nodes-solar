@@ -95,7 +95,7 @@ export class DocumentOCRUpstage implements INodeType {
 				const binaryData = item.binary[binaryPropertyName];
 				
 				// Validate file size (50MB limit)
-				if (binaryData.fileSize && binaryData.fileSize > 50 * 1024 * 1024) {
+				if (binaryData.fileSize && typeof binaryData.fileSize === 'number' && binaryData.fileSize > 50 * 1024 * 1024) {
 					throw new Error('File size exceeds 50MB limit');
 				}
 				

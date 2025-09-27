@@ -131,6 +131,17 @@ export class InformationExtractionUpstage implements INodeType {
 		outputs: ['main'],
 		credentials: [{ name: 'upstageApi', required: true }],
 		properties: [
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				options: [
+					{ name: 'Extract Information', value: 'extract' },
+					{ name: 'Generate Schema', value: 'schema' },
+				],
+				default: 'extract',
+				description: 'Choose between extracting information with a schema or generating a schema from a document',
+			},
 			// Input method
 			{
 				displayName: 'Input Type',
@@ -178,7 +189,7 @@ export class InformationExtractionUpstage implements INodeType {
 				default: 'information-extract',
 			},
 
-			// JSON schema
+			// JSON schema (for extract operation)
 			{
 				displayName: 'Schema Input Type',
 				name: 'schemaInputType',
@@ -189,6 +200,7 @@ export class InformationExtractionUpstage implements INodeType {
 				],
 				default: 'schema',
 				description: 'How to provide the JSON schema',
+				displayOptions: { show: { operation: ['extract'] } },
 			},
 			{
 				displayName: 'Schema Name',
@@ -196,7 +208,7 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'string',
 				default: 'document_schema',
 				description: 'Name for the JSON schema in response_format',
-				displayOptions: { show: { schemaInputType: ['schema'] } },
+				displayOptions: { show: { operation: ['extract'], schemaInputType: ['schema'] } },
 			},
 			{
 				displayName: 'JSON Schema (object)',
@@ -204,7 +216,7 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'json',
 				default: '{ "type": "object", "properties": {} }',
 				description: 'Target JSON schema for extraction (object schema)',
-				displayOptions: { show: { schemaInputType: ['schema'] } },
+				displayOptions: { show: { operation: ['extract'], schemaInputType: ['schema'] } },
 			},
 			{
 				displayName: 'Full Response Format JSON',
@@ -214,10 +226,21 @@ export class InformationExtractionUpstage implements INodeType {
 					'{"type":"json_schema","json_schema":{"name":"document_schema","schema":{"type":"object","properties":{}}}}',
 				description:
 					'Complete response_format JSON (including type, json_schema, name, and schema)',
-				displayOptions: { show: { schemaInputType: ['full'] } },
+				displayOptions: { show: { operation: ['extract'], schemaInputType: ['full'] } },
+			},
+			// Guidance for schema generation
+			{
+				displayName: 'Guidance (optional)',
+				name: 'prompt',
+				type: 'string',
+				typeOptions: { rows: 3 },
+				default: '',
+				placeholder: 'e.g., Generate a schema suitable for bank statements.',
+				description: 'Optional text instruction to influence schema generation',
+				displayOptions: { show: { operation: ['schema'] } },
 			},
 
-			// Chunking options
+			// Chunking options (for extract operation)
 			{
 				displayName: 'Pages per Chunk',
 				name: 'pagesPerChunk',
@@ -226,6 +249,7 @@ export class InformationExtractionUpstage implements INodeType {
 				typeOptions: { minValue: 0 },
 				description:
 					'Chunk pages to improve performance (recommended for 30+ pages). 0 to disable.',
+				displayOptions: { show: { operation: ['extract'] } },
 			},
 
 			// Return mode
@@ -235,6 +259,7 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'options',
 				options: [
 					{ name: 'Extracted JSON Only', value: 'extracted' },
+					{ name: 'Schema JSON Only', value: 'schema' },
 					{ name: 'Full Response', value: 'full' },
 				],
 				default: 'extracted',
@@ -248,211 +273,314 @@ export class InformationExtractionUpstage implements INodeType {
 
 		for (let i = 0; i < items.length; i++) {
 			try {
+				const operation = this.getNodeParameter('operation', i) as string;
 				const inputType = this.getNodeParameter('inputType', i) as string;
 				const model = this.getNodeParameter('model', i) as string;
-				const schemaInputType = this.getNodeParameter(
-					'schemaInputType',
-					i
-				) as string;
-				const pagesPerChunk = this.getNodeParameter(
-					'pagesPerChunk',
-					i,
-					0
-				) as number;
 				const returnMode = this.getNodeParameter('returnMode', i) as string;
 
-				// Schema parsing
-				let responseFormat: any;
-				let schemaName: string;
-				let schemaObj: any;
-
-				if (schemaInputType === 'schema') {
-					// Schema Only mode
-					schemaName = this.getNodeParameter('schemaName', i) as string;
-					const schemaRaw = this.getNodeParameter('json_schema', i);
-
-					try {
-						if (typeof schemaRaw === 'string') {
-							// JSON cleaning: remove leading/trailing spaces and invisible characters
-							const cleanedJson = schemaRaw
-								.trim()
-								.replace(/[\u200B-\u200D\uFEFF]/g, '');
-							schemaObj = JSON.parse(cleanedJson);
-						} else if (typeof schemaRaw === 'object' && schemaRaw !== null) {
-							schemaObj = schemaRaw;
-						} else {
-							throw new Error('Invalid schema data type');
-						}
-					} catch (error) {
-						throw new Error(
-							`Invalid JSON schema provided: ${(error as Error).message}`
-						);
-					}
-
-					responseFormat = {
-						type: 'json_schema',
-						json_schema: {
-							name: schemaName,
-							schema: schemaObj,
-						},
-					};
-				} else {
-					// Full Response Format mode
-					const fullResponseRaw = this.getNodeParameter(
-						'fullResponseFormat',
-						i
-					);
-
-					try {
-						if (typeof fullResponseRaw === 'string') {
-							// Step 1: Basic cleaning (remove only invisible characters)
-							let cleanedJson = fullResponseRaw
-								.trim() // Remove leading/trailing spaces
-								.replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove BOM and zero-width characters
-								.replace(/\r\n/g, '\n') // Normalize Windows line breaks
-								.replace(/\r/g, '\n'); // Normalize Mac line breaks
-
-							// Step 2: JSON validation and format detection
-							let parsedJson;
-							try {
-								// First try parsing as original
-								parsedJson = JSON.parse(cleanedJson);
-							} catch (firstError) {
-								// If failed, consider as compressed JSON and do additional cleaning
-								console.log(
-									'First parse failed, trying compressed JSON cleaning...'
-								);
-								console.log('Original error:', (firstError as Error).message);
-
-								cleanedJson = cleanedJson
-									.replace(/\n/g, '') // Remove all line breaks
-									.replace(/\s+/g, ' ') // Replace consecutive spaces with single space
-									.replace(/\s*([{}[\]":,])/g, '$1') // Remove spaces before JSON separators
-									.replace(/([{}[\]":,])\s*/g, '$1') // Remove spaces after JSON separators
-									.trim(); // Final space removal
-
-								// Attempt JSON structure validation and modification
-								cleanedJson =
-									InformationExtractionUpstage.validateAndFixJsonStructure(
-										cleanedJson
-									);
-
-								parsedJson = JSON.parse(cleanedJson);
-							}
-
-							// Step 3: JSON object validation
-							if (typeof parsedJson !== 'object' || parsedJson === null) {
-								throw new Error('Parsed result is not a valid JSON object');
-							}
-
-							// Step 4: Required structure validation
-							if (!parsedJson.type || !parsedJson.json_schema) {
-								throw new Error('Missing required fields: type or json_schema');
-							}
-
-							responseFormat = parsedJson;
-
-							// Debug logging
-							console.log('JSON parsing successful');
-							console.log('Type:', parsedJson.type);
-							console.log('Schema name:', parsedJson.json_schema?.name);
-						} else if (
-							typeof fullResponseRaw === 'object' &&
-							fullResponseRaw !== null
-						) {
-							responseFormat = fullResponseRaw;
-						} else {
-							throw new Error('Invalid response format data type');
-						}
-					} catch (error) {
-						throw new Error(
-							`Invalid full response format JSON provided: ${(error as Error).message}`
-						);
-					}
-				}
-
-				// Compose messages
-				let dataUrlOrHttp: string;
-				if (inputType === 'binary') {
-					const binaryPropertyName = this.getNodeParameter(
-						'binaryPropertyName',
+				// Handle different operations
+				if (operation === 'extract') {
+					// Extract Information operation
+					const schemaInputType = this.getNodeParameter(
+						'schemaInputType',
 						i
 					) as string;
-					const item = items[i];
-					if (!item.binary || !item.binary[binaryPropertyName]) {
-						throw new Error(
-							`No binary data found in property "${binaryPropertyName}".`
-						);
-					}
-					const binaryData = item.binary[binaryPropertyName];
-					const buffer = await this.helpers.getBinaryDataBuffer(
+					const pagesPerChunk = this.getNodeParameter(
+						'pagesPerChunk',
 						i,
-						binaryPropertyName
-					);
-					const mime = binaryData.mimeType || 'application/octet-stream';
-					const base64 = buffer.toString('base64');
-					dataUrlOrHttp = `data:${mime};base64,${base64}`;
-				} else {
-					dataUrlOrHttp = this.getNodeParameter('imageUrl', i) as string;
-					if (!dataUrlOrHttp) throw new Error('Image URL is required.');
-				}
+						0
+					) as number;
 
-				const requestBody: any = {
-					model,
-					messages: [
-						{
-							role: 'user',
-							content: [
-								{
-									type: 'image_url',
-									image_url: { url: dataUrlOrHttp },
-								},
-							],
-						},
-					],
-					response_format: responseFormat,
-				};
+					// Schema parsing
+					let responseFormat: any;
+					let schemaName: string;
+					let schemaObj: any;
 
-				// chunking options (optional)
-				if (pagesPerChunk && pagesPerChunk > 0) {
-					requestBody.chunking = { pages_per_chunk: pagesPerChunk };
-				}
+					if (schemaInputType === 'schema') {
+						// Schema Only mode
+						schemaName = this.getNodeParameter('schemaName', i) as string;
+						const schemaRaw = this.getNodeParameter('json_schema', i);
 
-				const requestOptions: IHttpRequestOptions = {
-					method: 'POST',
-					url: 'https://api.upstage.ai/v1/information-extraction',
-					body: requestBody,
-					json: true,
-				};
+						try {
+							if (typeof schemaRaw === 'string') {
+								// JSON cleaning: remove leading/trailing spaces and invisible characters
+								const cleanedJson = schemaRaw
+									.trim()
+									.replace(/[\u200B-\u200D\uFEFF]/g, '');
+								schemaObj = JSON.parse(cleanedJson);
+							} else if (typeof schemaRaw === 'object' && schemaRaw !== null) {
+								schemaObj = schemaRaw;
+							} else {
+								throw new Error('Invalid schema data type');
+							}
+						} catch (error) {
+							throw new Error(
+								`Invalid JSON schema provided: ${(error as Error).message}`
+							);
+						}
 
-				const response = await this.helpers.httpRequestWithAuthentication.call(
-					this,
-					'upstageApi',
-					requestOptions
-				);
+						responseFormat = {
+							type: 'json_schema',
+							json_schema: {
+								name: schemaName,
+								schema: schemaObj,
+							},
+						};
+					} else {
+						// Full Response Format mode
+						const fullResponseRaw = this.getNodeParameter(
+							'fullResponseFormat',
+							i
+						);
 
-				if (returnMode === 'full') {
-					returnData.push({ json: response, pairedItem: { item: i } });
-				} else {
-					// Parse extracted JSON
-					const content = response?.choices?.[0]?.message?.content ?? '';
-					let extracted: any;
-					try {
-						extracted = content ? JSON.parse(content) : {};
-					} catch {
-						// Content may not be JSON string, so return original text on failure
-						extracted = { _raw: content };
+						try {
+							if (typeof fullResponseRaw === 'string') {
+								// Step 1: Basic cleaning (remove only invisible characters)
+								let cleanedJson = fullResponseRaw
+									.trim() // Remove leading/trailing spaces
+									.replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove BOM and zero-width characters
+									.replace(/\r\n/g, '\n') // Normalize Windows line breaks
+									.replace(/\r/g, '\n'); // Normalize Mac line breaks
+
+								// Step 2: JSON validation and format detection
+								let parsedJson;
+								try {
+									// First try parsing as original
+									parsedJson = JSON.parse(cleanedJson);
+								} catch (firstError) {
+									// If failed, consider as compressed JSON and do additional cleaning
+									console.log(
+										'First parse failed, trying compressed JSON cleaning...'
+									);
+									console.log('Original error:', (firstError as Error).message);
+
+									cleanedJson = cleanedJson
+										.replace(/\n/g, '') // Remove all line breaks
+										.replace(/\s+/g, ' ') // Replace consecutive spaces with single space
+										.replace(/\s*([{}[\]":,])/g, '$1') // Remove spaces before JSON separators
+										.replace(/([{}[\]":,])\s*/g, '$1') // Remove spaces after JSON separators
+										.trim(); // Final space removal
+
+									// Attempt JSON structure validation and modification
+									cleanedJson =
+										InformationExtractionUpstage.validateAndFixJsonStructure(
+											cleanedJson
+										);
+
+									parsedJson = JSON.parse(cleanedJson);
+								}
+
+								// Step 3: JSON object validation
+								if (typeof parsedJson !== 'object' || parsedJson === null) {
+									throw new Error('Parsed result is not a valid JSON object');
+								}
+
+								// Step 4: Required structure validation
+								if (!parsedJson.type || !parsedJson.json_schema) {
+									throw new Error('Missing required fields: type or json_schema');
+								}
+
+								responseFormat = parsedJson;
+
+								// Debug logging
+								console.log('JSON parsing successful');
+								console.log('Type:', parsedJson.type);
+								console.log('Schema name:', parsedJson.json_schema?.name);
+							} else if (
+								typeof fullResponseRaw === 'object' &&
+								fullResponseRaw !== null
+							) {
+								responseFormat = fullResponseRaw;
+							} else {
+								throw new Error('Invalid response format data type');
+							}
+						} catch (error) {
+							throw new Error(
+								`Invalid full response format JSON provided: ${(error as Error).message}`
+							);
+						}
 					}
 
-					returnData.push({
-						json: {
-							extracted,
-							model: response?.model,
-							usage: response?.usage,
-							full_response: response,
-						},
-						pairedItem: { item: i },
+					// Compose messages
+					let dataUrlOrHttp: string;
+					if (inputType === 'binary') {
+						const binaryPropertyName = this.getNodeParameter(
+							'binaryPropertyName',
+							i
+						) as string;
+						const item = items[i];
+						if (!item.binary || !item.binary[binaryPropertyName]) {
+							throw new Error(
+								`No binary data found in property "${binaryPropertyName}".`
+							);
+						}
+						const binaryData = item.binary[binaryPropertyName];
+						const buffer = await this.helpers.getBinaryDataBuffer(
+							i,
+							binaryPropertyName
+						);
+						const mime = binaryData.mimeType || 'application/octet-stream';
+						const base64 = buffer.toString('base64');
+						dataUrlOrHttp = `data:${mime};base64,${base64}`;
+					} else {
+						dataUrlOrHttp = this.getNodeParameter('imageUrl', i) as string;
+						if (!dataUrlOrHttp) throw new Error('Image URL is required.');
+					}
+
+					const requestBody: any = {
+						model,
+						messages: [
+							{
+								role: 'user',
+								content: [
+									{
+										type: 'image_url',
+										image_url: { url: dataUrlOrHttp },
+									},
+								],
+							},
+						],
+						response_format: responseFormat,
+					};
+
+					// chunking options (optional)
+					if (pagesPerChunk && pagesPerChunk > 0) {
+						requestBody.chunking = { pages_per_chunk: pagesPerChunk };
+					}
+
+					const requestOptions: IHttpRequestOptions = {
+						method: 'POST',
+						url: 'https://api.upstage.ai/v1/information-extraction',
+						body: requestBody,
+						json: true,
+					};
+
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'upstageApi',
+						requestOptions
+					);
+
+					if (returnMode === 'full') {
+						returnData.push({ json: response, pairedItem: { item: i } });
+					} else {
+						// Parse extracted JSON
+						const content = response?.choices?.[0]?.message?.content ?? '';
+						let extracted: any;
+						try {
+							extracted = content ? JSON.parse(content) : {};
+						} catch {
+							// Content may not be JSON string, so return original text on failure
+							extracted = { _raw: content };
+						}
+
+						returnData.push({
+							json: {
+								extracted,
+								model: response?.model,
+								usage: response?.usage,
+								full_response: response,
+							},
+							pairedItem: { item: i },
+						});
+					}
+				} else {
+					// Generate Schema operation
+					const prompt = (
+						this.getNodeParameter('prompt', i, '') as string
+					)?.trim();
+
+					// Compose messages
+					let dataUrlOrHttp: string;
+					if (inputType === 'binary') {
+						const binaryPropertyName = this.getNodeParameter(
+							'binaryPropertyName',
+							i
+						) as string;
+						const item = items[i];
+						if (!item.binary || !item.binary[binaryPropertyName]) {
+							throw new Error(
+								`No binary data found in property "${binaryPropertyName}".`
+							);
+						}
+						const binaryData = item.binary[binaryPropertyName];
+						const buffer = await this.helpers.getBinaryDataBuffer(
+							i,
+							binaryPropertyName
+						);
+						const mime = binaryData.mimeType || 'application/octet-stream';
+						const base64 = buffer.toString('base64');
+						dataUrlOrHttp = `data:${mime};base64,${base64}`;
+					} else {
+						dataUrlOrHttp = this.getNodeParameter('imageUrl', i) as string;
+						if (!dataUrlOrHttp) throw new Error('Image URL is required.');
+					}
+
+					// Compose messages
+					const messages: any[] = [];
+					if (prompt) {
+						messages.push({ role: 'user', content: prompt });
+					}
+					messages.push({
+						role: 'user',
+						content: [
+							{
+								type: 'image_url',
+								image_url: { url: dataUrlOrHttp },
+							},
+						],
 					});
+
+					// Request body
+					const requestBody: any = {
+						model,
+						messages,
+					};
+
+					const requestOptions: IHttpRequestOptions = {
+						method: 'POST',
+						url: 'https://api.upstage.ai/v1/information-extraction/schema-generation',
+						body: requestBody,
+						json: true,
+					};
+
+					// Call
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'upstageApi',
+						requestOptions
+					);
+
+					// Response parsing + binary passthrough
+					if (returnMode === 'full') {
+						const out: INodeExecutionData = {
+							json: response,
+							pairedItem: { item: i },
+						};
+						if (items[i].binary) out.binary = items[i].binary; // passthrough
+						returnData.push(out);
+					} else {
+						const contentStr = response?.choices?.[0]?.message?.content ?? '';
+						let schemaObj: any;
+						try {
+							schemaObj = contentStr ? JSON.parse(contentStr) : {};
+						} catch {
+							schemaObj = { _raw: contentStr };
+						}
+
+						const out: INodeExecutionData = {
+							json: {
+								schema_type: schemaObj?.type ?? null,
+								json_schema: schemaObj?.json_schema ?? null,
+								raw: schemaObj,
+								model: response?.model,
+								usage: response?.usage,
+							},
+							pairedItem: { item: i },
+						};
+						if (items[i].binary) out.binary = items[i].binary; // passthrough
+						returnData.push(out);
+					}
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {

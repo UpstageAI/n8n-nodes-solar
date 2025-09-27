@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "build": "tsc && npm run copy-assets",
-    "copy-assets": "cp src/upstage_v2.svg dist/ && cp src/nodes/LmChatUpstage/upstage_v2.svg dist/nodes/LmChatUpstage/ && cp src/nodes/EmbeddingsUpstage/upstage_v2.svg dist/nodes/EmbeddingsUpstage/ && cp src/nodes/LmChatModelUpstage/upstage_v2.svg dist/nodes/LmChatModelUpstage/ && cp src/nodes/EmbeddingsUpstageModel/upstage_v2.svg dist/nodes/EmbeddingsUpstageModel/ && cp src/nodes/DocumentParsingUpstage/upstage_v2.svg dist/nodes/DocumentParsingUpstage/ && cp src/nodes/DocumentOCRUpstage/upstage_v2.svg dist/nodes/DocumentOCRUpstage/ && cp src/nodes/InformationExtractionUpstage/upstage_v2.svg dist/nodes/InformationExtractionUpstage/ && cp src/nodes/InformationExtractionSchemaUpstage/upstage_v2.svg dist/nodes/InformationExtractionSchemaUpstage/ && cp src/nodes/DocumentClassificationUpstage/upstage_v2.svg dist/nodes/DocumentClassificationUpstage/ || true",
+    "copy-assets": "cp src/upstage_v2.svg dist/ && cp src/nodes/LmChatUpstage/upstage_v2.svg dist/nodes/LmChatUpstage/ && cp src/nodes/EmbeddingsUpstage/upstage_v2.svg dist/nodes/EmbeddingsUpstage/ && cp src/nodes/LmChatModelUpstage/upstage_v2.svg dist/nodes/LmChatModelUpstage/ && cp src/nodes/EmbeddingsUpstageModel/upstage_v2.svg dist/nodes/EmbeddingsUpstageModel/ && cp src/nodes/DocumentParsingUpstage/upstage_v2.svg dist/nodes/DocumentParsingUpstage/ && cp src/nodes/DocumentOCRUpstage/upstage_v2.svg dist/nodes/DocumentOCRUpstage/ && cp src/nodes/InformationExtractionUpstage/upstage_v2.svg dist/nodes/InformationExtractionUpstage/ && cp src/nodes/DocumentClassificationUpstage/upstage_v2.svg dist/nodes/DocumentClassificationUpstage/ || true",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "prepublishOnly": "npm run clean && npm run build",
@@ -51,7 +51,6 @@
       "dist/nodes/DocumentParsingUpstage/DocumentParsingUpstage.node.js",
       "dist/nodes/DocumentOCRUpstage/DocumentOCRUpstage.node.js",
       "dist/nodes/InformationExtractionUpstage/InformationExtractionUpstage.node.js",
-      "dist/nodes/InformationExtractionSchemaUpstage/InformationExtractionSchemaUpstage.node.js",
       "dist/nodes/DocumentClassificationUpstage/DocumentClassificationUpstage.node.js"
     ]
   },
