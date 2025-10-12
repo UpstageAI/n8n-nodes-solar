@@ -140,7 +140,8 @@ export class InformationExtractionUpstage implements INodeType {
 					{ name: 'Generate Schema', value: 'schema' },
 				],
 				default: 'extract',
-				description: 'Choose between extracting information with a schema or generating a schema from a document',
+				description:
+					'Choose between extracting information with a schema or generating a schema from a document',
 			},
 			// Input method
 			{
@@ -208,7 +209,9 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'string',
 				default: 'document_schema',
 				description: 'Name for the JSON schema in response_format',
-				displayOptions: { show: { operation: ['extract'], schemaInputType: ['schema'] } },
+				displayOptions: {
+					show: { operation: ['extract'], schemaInputType: ['schema'] },
+				},
 			},
 			{
 				displayName: 'JSON Schema (object)',
@@ -216,7 +219,9 @@ export class InformationExtractionUpstage implements INodeType {
 				type: 'json',
 				default: '{ "type": "object", "properties": {} }',
 				description: 'Target JSON schema for extraction (object schema)',
-				displayOptions: { show: { operation: ['extract'], schemaInputType: ['schema'] } },
+				displayOptions: {
+					show: { operation: ['extract'], schemaInputType: ['schema'] },
+				},
 			},
 			{
 				displayName: 'Full Response Format JSON',
@@ -226,7 +231,9 @@ export class InformationExtractionUpstage implements INodeType {
 					'{"type":"json_schema","json_schema":{"name":"document_schema","schema":{"type":"object","properties":{}}}}',
 				description:
 					'Complete response_format JSON (including type, json_schema, name, and schema)',
-				displayOptions: { show: { operation: ['extract'], schemaInputType: ['full'] } },
+				displayOptions: {
+					show: { operation: ['extract'], schemaInputType: ['full'] },
+				},
 			},
 			// Guidance for schema generation
 			{
@@ -377,7 +384,9 @@ export class InformationExtractionUpstage implements INodeType {
 
 								// Step 4: Required structure validation
 								if (!parsedJson.type || !parsedJson.json_schema) {
-									throw new Error('Missing required fields: type or json_schema');
+									throw new Error(
+										'Missing required fields: type or json_schema'
+									);
 								}
 
 								responseFormat = parsedJson;
@@ -455,11 +464,12 @@ export class InformationExtractionUpstage implements INodeType {
 						json: true,
 					};
 
-					const response = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions
-					);
+					const response =
+						await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'upstageApi',
+							requestOptions
+						);
 
 					if (returnMode === 'full') {
 						returnData.push({ json: response, pairedItem: { item: i } });
@@ -545,11 +555,12 @@ export class InformationExtractionUpstage implements INodeType {
 					};
 
 					// Call
-					const response = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions
-					);
+					const response =
+						await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'upstageApi',
+							requestOptions
+						);
 
 					// Response parsing + binary passthrough
 					if (returnMode === 'full') {

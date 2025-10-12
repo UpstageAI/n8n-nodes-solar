@@ -5,7 +5,52 @@ import type {
 	INodeExecutionData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
-import FormData from 'form-data';
+
+// Response type definitions
+interface DocumentOCRResponse {
+	text?: string;
+	pages?: any[];
+}
+
+// Helper function to create multipart/form-data without external dependencies
+function createMultipartFormData(
+	fields: Record<string, string>,
+	file: { buffer: Buffer; filename: string; contentType: string }
+): { body: Buffer; contentType: string } {
+	const boundary =
+		'----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+	const parts: Buffer[] = [];
+
+	// Add text fields
+	for (const [name, value] of Object.entries(fields)) {
+		parts.push(
+			Buffer.from(
+				`--${boundary}\r\n` +
+					`Content-Disposition: form-data; name="${name}"\r\n\r\n` +
+					`${value}\r\n`
+			)
+		);
+	}
+
+	// Add file
+	parts.push(
+		Buffer.from(
+			`--${boundary}\r\n` +
+				`Content-Disposition: form-data; name="document"; filename="${file.filename}"\r\n` +
+				`Content-Type: ${file.contentType}\r\n\r\n`
+		)
+	);
+	parts.push(file.buffer);
+	parts.push(Buffer.from('\r\n'));
+
+	// End boundary
+	parts.push(Buffer.from(`--${boundary}--\r\n`));
+
+	return {
+		body: Buffer.concat(parts),
+		contentType: `multipart/form-data; boundary=${boundary}`,
+	};
+}
 
 export class DocumentOCRUpstage implements INodeType {
 	description: INodeTypeDescription = {
@@ -40,7 +85,8 @@ export class DocumentOCRUpstage implements INodeType {
 					{ name: 'ocr-250904', value: 'ocr-250904' },
 				],
 				default: 'ocr',
-				description: 'The OCR model to use. We recommend using the alias "ocr" which always points to the latest stable model.',
+				description:
+					'The OCR model to use. We recommend using the alias "ocr" which always points to the latest stable model.',
 			},
 			{
 				displayName: 'Schema',
@@ -52,7 +98,8 @@ export class DocumentOCRUpstage implements INodeType {
 					{ name: 'Google', value: 'google' },
 				],
 				default: '',
-				description: 'Optional parameter that specifies the response format. If set, the output is converted to the format of the corresponding OCR API.',
+				description:
+					'Optional parameter that specifies the response format. If set, the output is converted to the format of the corresponding OCR API.',
 			},
 			{
 				displayName: 'Return',
@@ -93,86 +140,110 @@ export class DocumentOCRUpstage implements INodeType {
 				}
 
 				const binaryData = item.binary[binaryPropertyName];
-				
+
 				// Validate file size (50MB limit)
-				if (binaryData.fileSize && typeof binaryData.fileSize === 'number' && binaryData.fileSize > 50 * 1024 * 1024) {
+				if (
+					binaryData.fileSize &&
+					typeof binaryData.fileSize === 'number' &&
+					binaryData.fileSize > 50 * 1024 * 1024
+				) {
 					throw new Error('File size exceeds 50MB limit');
 				}
-				
+
 				const buffer = await this.helpers.getBinaryDataBuffer(
 					i,
 					binaryPropertyName
 				);
 
-				// --- FormData stream configuration ---
-				const form = new FormData();
-				form.append('document', buffer, {
+				// Prepare form fields
+				const fields: Record<string, string> = {
+					model,
+				};
+
+				if (schema) {
+					fields.schema = schema;
+				}
+
+				// Create multipart/form-data without external dependencies
+				const { body, contentType } = createMultipartFormData(fields, {
+					buffer,
 					filename: binaryData.fileName || 'upload',
 					contentType: binaryData.mimeType || 'application/octet-stream',
 				});
-				form.append('model', model);
-				if (schema) {
-					form.append('schema', schema);
-				}
 
 				const requestOptions: IHttpRequestOptions = {
 					method: 'POST',
 					url: 'https://api.upstage.ai/v1/document-digitization',
-					body: form as unknown as any, // stream
-					headers: form.getHeaders(), // include boundary
-					json: false, // not JSON
+					body,
+					headers: {
+						'Content-Type': contentType,
+					},
+					// Response will be JSON (request body is already Buffer)
 				};
 
-				const response =
-					await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'upstageApi',
-						requestOptions
-					);
+				const response = await this.helpers.httpRequestWithAuthentication.call(
+					this,
+					'upstageApi',
+					requestOptions
+				);
+
+				const ocrResponse = response as DocumentOCRResponse;
 
 				// Validate response structure
-				if (!response || typeof response !== 'object') {
+				if (!ocrResponse || typeof ocrResponse !== 'object') {
 					throw new Error('Invalid response format from Upstage OCR API');
 				}
 
 				// Process response based on return mode
 				if (returnMode === 'text') {
 					returnData.push({
-						json: { text: response?.text ?? '' },
+						json: { text: ocrResponse?.text ?? '' },
 						pairedItem: { item: i },
 					});
 				} else if (returnMode === 'pages') {
 					returnData.push({
-						json: { pages: response?.pages ?? [] },
+						json: { pages: ocrResponse?.pages ?? [] },
 						pairedItem: { item: i },
 					});
 				} else if (returnMode === 'words') {
 					// Extract all words from all pages
-					const allWords = response?.pages?.flatMap((page: any) => page.words || []) || [];
+					const allWords =
+						ocrResponse?.pages?.flatMap((page: any) => page.words || []) || [];
 					returnData.push({
 						json: { words: allWords },
 						pairedItem: { item: i },
 					});
 				} else if (returnMode === 'confidence') {
 					returnData.push({
-						json: { 
-							confidence: response?.confidence ?? 0,
-							modelVersion: response?.modelVersion ?? '',
-							numBilledPages: response?.numBilledPages ?? 0
+						json: {
+							confidence: (ocrResponse as any)?.confidence ?? 0,
+							modelVersion: (ocrResponse as any)?.modelVersion ?? '',
+							numBilledPages: (ocrResponse as any)?.numBilledPages ?? 0,
 						},
 						pairedItem: { item: i },
 					});
 				} else {
 					// Full response
-					returnData.push({ json: response, pairedItem: { item: i } });
+					returnData.push({
+						json: ocrResponse as any,
+						pairedItem: { item: i },
+					});
 				}
 			} catch (error) {
 				const errorMessage =
 					error instanceof Error ? error.message : 'Unknown error';
+				const statusCode =
+					typeof error === 'object' &&
+					error !== null &&
+					'statusCode' in error &&
+					typeof error.statusCode === 'number'
+						? error.statusCode
+						: undefined;
 
 				// Log detailed error information
 				console.error('🚫 Upstage Document OCR Error:', {
 					error: errorMessage,
+					statusCode,
 					itemIndex: i,
 					timestamp: new Date().toISOString(),
 				});
@@ -181,6 +252,7 @@ export class DocumentOCRUpstage implements INodeType {
 					returnData.push({
 						json: {
 							error: errorMessage,
+							statusCode,
 							error_code: (error as any)?.code || 'unknown_error',
 							timestamp: new Date().toISOString(),
 						},
