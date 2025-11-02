@@ -9,12 +9,11 @@ import {
 
 import { N8nLlmTracing } from '../../utils/N8nLlmTracing';
 import { makeN8nLlmFailedAttemptHandler } from '../../utils/n8nLlmFailedAttemptHandler';
-import { getHttpProxyAgent } from '../../utils/httpProxyAgent';
 import { getConnectionHintNoticeField } from '../../utils/sharedFields';
 
 /**
  * Custom ChatOpenAI wrapper for Upstage Document Chat API
- * This extends ChatOpenAI to transform messages into Document Chat format
+ * Extends ChatOpenAI but overrides the endpoint to use /responses instead of /chat/completions
  */
 class UpstageDocumentChatModel extends ChatOpenAI {
 	private fileIds: string[];
@@ -34,24 +33,24 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		callbacks?: any[];
 		onFailedAttempt?: any;
 	}) {
-		// Call ChatOpenAI constructor with Document Chat API endpoint
-		const httpAgent = getHttpProxyAgent();
-		const configOptions: any = {
-			baseURL: 'https://api.upstage.ai/v1/document-chat',
-			defaultHeaders: {
-				'Content-Type': 'application/json',
-			},
-		};
-		if (httpAgent) {
-			configOptions.httpAgent = httpAgent;
-		}
+		console.log('🔧 UpstageDocumentChatModel constructor called with:', {
+			model: config.model,
+			fileIds: config.fileIds,
+			streaming: config.streaming,
+			conversationId: config.conversationId,
+		});
 
+		// Call ChatOpenAI constructor
+		// We'll override the endpoint in completionWithRetry
 		super({
 			apiKey: config.apiKey,
 			model: config.model,
 			temperature: config.temperature,
 			streaming: config.streaming || false,
-			configuration: configOptions,
+			configuration: {
+				// Use base Document Chat URL (we'll add /responses in completionWithRetry)
+				baseURL: 'https://api.upstage.ai/v1/document-chat',
+			},
 			callbacks: config.callbacks,
 			onFailedAttempt: config.onFailedAttempt,
 		});
@@ -60,45 +59,81 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		this.conversationId = config.conversationId;
 		this.reasoningEffort = config.reasoningEffort;
 		this.reasoningSummary = config.reasoningSummary;
+
+		console.log('✅ UpstageDocumentChatModel initialized');
 	}
 
 	/**
-	 * Override to transform messages to Document Chat format
-	 * This method is called by ChatOpenAI before making the API call
+	 * Override the completion method to use /responses endpoint
+	 * This is the critical method that ChatOpenAI uses to make API calls
 	 */
-	override invocationParams(options?: any): any {
-		const params = super.invocationParams(options);
-
-		// Add Document Chat specific parameters
-		return {
-			...params,
-			reasoning: {
-				effort: this.reasoningEffort as 'low' | 'medium' | 'high',
-				summary: this.reasoningSummary as 'auto' | 'enabled' | 'disabled',
-			},
-			...(this.conversationId && {
-				conversation: {
-					id: this.conversationId,
-				},
-			}),
-		};
-	}
-
-	/**
-	 * Override to transform messages into Document Chat input format
-	 * This is called before sending to API
-	 */
-	override async _generate(
-		messages: BaseMessage[],
-		options: any,
-		runManager?: any,
+	async completionWithRetry(
+		request: any,
+		options?: any,
 	): Promise<any> {
-		// Extract query from last message
+		console.log('🚀 completionWithRetry called');
+		console.log('📤 Original request:', JSON.stringify(request, null, 2));
+		console.log('⚙️ Options:', JSON.stringify(options, null, 2));
+
+		// Transform the request to Document Chat format
+		const documentChatRequest = this.transformToDocumentChatFormat(request);
+
+		console.log('📤 Transformed Document Chat request:', JSON.stringify(documentChatRequest, null, 2));
+
+		// ChatOpenAI uses the 'client' property which has a 'chat.completions.create()' method
+		// We need to directly call fetch to use the correct endpoint
+		const url = 'https://api.upstage.ai/v1/document-chat/responses';
+		console.log('🌐 Calling endpoint:', url);
+
+		try {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${(this as any).apiKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(documentChatRequest),
+				signal: options?.signal,
+			});
+
+			console.log('📥 Response status:', response.status, response.statusText);
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('❌ API Error:', errorText);
+				throw new Error(`Document Chat API error: ${response.status} - ${errorText}`);
+			}
+
+			// If streaming, return the response body for SSE parsing
+			if (documentChatRequest.stream) {
+				console.log('🔄 Returning streaming response');
+				return response;
+			}
+
+			// Non-streaming: parse JSON
+			const data = await response.json();
+			console.log('📥 Response data:', JSON.stringify(data, null, 2));
+			return this.transformFromDocumentChatFormat(data);
+		} catch (error: any) {
+			console.error('❌ completionWithRetry error:', error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Transform OpenAI format request to Document Chat format
+	 */
+	private transformToDocumentChatFormat(request: any): any {
+		console.log('🔄 Transforming to Document Chat format');
+
+		// Extract the user query from messages
+		const messages = request.messages || [];
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
-		if (typeof lastMessage.content === 'string') {
+
+		if (typeof lastMessage?.content === 'string') {
 			query = lastMessage.content;
-		} else if (Array.isArray(lastMessage.content)) {
+		} else if (Array.isArray(lastMessage?.content)) {
 			const textContent = lastMessage.content.find(
 				(c: any) => c.type === 'text' || typeof c === 'string'
 			);
@@ -107,6 +142,8 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 				: (textContent as any)?.text || '';
 		}
 
+		console.log('📝 Extracted query:', query);
+
 		// Build Document Chat input format
 		const content = [
 			...this.fileIds.map(fileId => ({
@@ -119,63 +156,82 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 			},
 		];
 
-		// Create Document Chat formatted message
-		const documentChatMessages = [
-			{
-				role: 'user' as const,
-				content,
+		const documentChatRequest: any = {
+			model: request.model,
+			stream: request.stream || false,
+			input: [
+				{
+					role: 'user',
+					content,
+				},
+			],
+			reasoning: {
+				effort: this.reasoningEffort as 'low' | 'medium' | 'high',
+				summary: this.reasoningSummary as 'auto' | 'enabled' | 'disabled',
 			},
-		];
+		};
 
-		// Replace messages with Document Chat format and call parent
-		return super._generate(documentChatMessages as any, options, runManager);
+		if (this.conversationId) {
+			documentChatRequest.conversation = {
+				id: this.conversationId,
+			};
+		}
+
+		if (request.temperature !== undefined) {
+			documentChatRequest.temperature = request.temperature;
+		}
+
+		console.log('✅ Transformed request ready');
+		return documentChatRequest;
 	}
 
 	/**
-	 * Override streaming to use Document Chat format
+	 * Transform Document Chat response to OpenAI format
 	 */
-	override async *_streamResponseChunks(
-		messages: BaseMessage[],
-		options: any,
-		runManager?: any,
-	): AsyncGenerator<any> {
-		// Extract query from last message
-		const lastMessage = messages[messages.length - 1];
-		let query = '';
-		if (typeof lastMessage.content === 'string') {
-			query = lastMessage.content;
-		} else if (Array.isArray(lastMessage.content)) {
-			const contentArray = lastMessage.content as any[];
-			const textContent = contentArray.find(
-				(c: any) => c.type === 'text' || typeof c === 'string'
-			);
-			query = typeof textContent === 'string'
-				? textContent
-				: (textContent as any)?.text || '';
-		}
+	private transformFromDocumentChatFormat(data: any): any {
+		console.log('🔄 Transforming from Document Chat format');
 
-		// Build Document Chat input format
-		const content = [
-			...this.fileIds.map(fileId => ({
-				type: 'input_file' as const,
-				file_id: fileId,
-			})),
-			{
-				type: 'input_text' as const,
-				text: query,
+		// Extract the response text
+		const output = data.output || [];
+		const messageOutput = output.find((item: any) => item.type === 'message');
+		const contentText = messageOutput?.content?.[0]?.text || '';
+
+		console.log('📝 Extracted content:', contentText.substring(0, 100) + '...');
+
+		// Transform to OpenAI format
+		const openAIFormat = {
+			id: data.id || 'unknown',
+			object: 'chat.completion',
+			created: data.created_at || Math.floor(Date.now() / 1000),
+			model: data.model || this.model,
+			choices: [
+				{
+					index: 0,
+					message: {
+						role: 'assistant',
+						content: contentText,
+					},
+					finish_reason: 'stop',
+				},
+			],
+			usage: {
+				prompt_tokens: data.usage?.input_tokens || 0,
+				completion_tokens: data.usage?.output_tokens || 0,
+				total_tokens: data.usage?.total_tokens || 0,
 			},
-		];
+		};
 
-		// Create Document Chat formatted message
-		const documentChatMessages = [
-			{
-				role: 'user' as const,
-				content,
-			},
-		];
+		console.log('✅ Transformed to OpenAI format');
+		return openAIFormat;
+	}
 
-		// Use parent's streaming with transformed messages
-		yield* super._streamResponseChunks(documentChatMessages as any, options, runManager);
+	/**
+	 * Override invocationParams to add Document Chat specific parameters
+	 */
+	override invocationParams(options?: any): any {
+		const params = super.invocationParams(options);
+		console.log('📋 invocationParams called, returning params:', JSON.stringify(params, null, 2));
+		return params;
 	}
 }
 
@@ -330,6 +386,8 @@ export class DocumentChatModelUpstage implements INodeType {
 		this: ISupplyDataFunctions,
 		itemIndex: number
 	): Promise<SupplyData> {
+		console.log('🚀 DocumentChatModelUpstage.supplyData called');
+
 		const credentials = await this.getCredentials('upstageApi');
 
 		const model = this.getNodeParameter('model', itemIndex) as string;
@@ -342,6 +400,13 @@ export class DocumentChatModelUpstage implements INodeType {
 			temperature?: number;
 			streaming?: boolean;
 		};
+
+		console.log('📋 Node parameters:', {
+			model,
+			fileIds,
+			conversationId,
+			options,
+		});
 
 		// Validate file IDs
 		if (!fileIds || fileIds.trim() === '') {
