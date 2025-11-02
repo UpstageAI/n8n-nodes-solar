@@ -248,16 +248,7 @@ export class DocumentChatModelUpstage implements INodeType {
 			configuration,
 			temperature: options.temperature,
 			streaming: options.streaming || false,
-			// Store document chat settings for use in API calls
-			modelKwargs: {
-				actualModel: model, // Store the actual model ('genius' or 'turbo')
-				fileIds: fileIdArray,
-				conversationId: conversationId || undefined,
-				reasoning: {
-					effort: options.reasoningEffort || 'medium',
-					summary: options.reasoningSummary || 'auto',
-				},
-			},
+			// Don't use modelKwargs - it gets sent in API requests!
 		};
 
 		// Add tracing callbacks if available
@@ -273,13 +264,30 @@ export class DocumentChatModelUpstage implements INodeType {
 		// Create a custom ChatOpenAI instance
 		const chatModel = new ChatOpenAI(modelConfig);
 
+		// Store Document Chat configuration directly on the instance
+		// (not in modelKwargs, which gets sent to API)
+		(chatModel as any).documentChatConfig = {
+			actualModel: model, // 'genius' or 'turbo'
+			fileIds: fileIdArray,
+			conversationId: conversationId || undefined,
+			reasoningEffort: options.reasoningEffort || 'medium',
+			reasoningSummary: options.reasoningSummary || 'auto',
+			apiKey: credentials.apiKey as string,
+		};
+
 		// Override _generate to use Document Chat API instead of OpenAI API
 		const originalGenerate = chatModel._generate.bind(chatModel);
 		chatModel._generate = async function(
 			messages: BaseMessage[],
-			options: any,
-			runManager?: CallbackManagerForLLMRun
+			_options: any,
+			_runManager?: CallbackManagerForLLMRun
 		): Promise<ChatResult> {
+			// Get Document Chat configuration
+			const config = (this as any).documentChatConfig;
+			if (!config) {
+				throw new Error('Document Chat configuration not found');
+			}
+
 			// Extract the user's query from the last message
 			const lastMessage = messages[messages.length - 1];
 			let query = '';
@@ -291,7 +299,7 @@ export class DocumentChatModelUpstage implements INodeType {
 			}
 
 			// Build input with file references
-			const inputFiles = fileIdArray.map(fileId => ({
+			const inputFiles = config.fileIds.map((fileId: string) => ({
 				type: 'input_file',
 				file_id: fileId,
 			}));
@@ -304,12 +312,9 @@ export class DocumentChatModelUpstage implements INodeType {
 				},
 			];
 
-			// Get the actual Document Chat model from modelKwargs
-			const actualModel = (this as any).modelKwargs?.actualModel || model;
-
 			// Build request body for Document Chat API
 			const requestBody: any = {
-				model: actualModel, // Use 'genius' or 'turbo'
+				model: config.actualModel, // Use 'genius' or 'turbo'
 				stream: false, // Disable streaming for now
 				input: [
 					{
@@ -319,18 +324,16 @@ export class DocumentChatModelUpstage implements INodeType {
 				],
 			};
 
-			// Add reasoning if specified
-			const reasoningEffort = (options as any)?.reasoningEffort || 'medium';
-			const reasoningSummary = (options as any)?.reasoningSummary || 'auto';
+			// Add reasoning configuration
 			requestBody.reasoning = {
-				effort: reasoningEffort,
-				summary: reasoningSummary,
+				effort: config.reasoningEffort,
+				summary: config.reasoningSummary,
 			};
 
 			// Add conversation ID if specified
-			if (conversationId) {
+			if (config.conversationId) {
 				requestBody.conversation = {
-					id: conversationId,
+					id: config.conversationId,
 				};
 			}
 
@@ -339,7 +342,7 @@ export class DocumentChatModelUpstage implements INodeType {
 				const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
 					method: 'POST',
 					headers: {
-						'Authorization': `Bearer ${credentials.apiKey}`,
+						'Authorization': `Bearer ${config.apiKey}`,
 						'Content-Type': 'application/json',
 					},
 					body: JSON.stringify(requestBody),
