@@ -192,8 +192,11 @@ export class DocumentChatModelUpstage implements INodeType {
 			throw new Error('At least one valid file ID is required.');
 		}
 
+		// IMPORTANT: Don't use document-chat in baseURL
+		// ChatOpenAI will add /chat/completions to baseURL, causing 404
+		// We'll override _generate to call the correct endpoint
 		const configuration = {
-			baseURL: 'https://api.upstage.ai/v1/document-chat',
+			baseURL: 'https://api.upstage.ai/v1/solar',
 			httpAgent: getHttpProxyAgent(),
 			defaultHeaders: {
 				'Content-Type': 'application/json',
@@ -237,15 +240,17 @@ export class DocumentChatModelUpstage implements INodeType {
 		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
 		// Build model configuration
-		// Note: We're extending ChatOpenAI but customizing for Document Chat API
+		// IMPORTANT: Use a valid Solar model name for initialization
+		// We'll use the actual 'genius' or 'turbo' model in _generate override
 		const modelConfig: any = {
 			apiKey: credentials.apiKey as string,
-			model, // 'genius' or 'turbo'
+			model: 'solar-mini', // Use a valid model name for initialization
 			configuration,
 			temperature: options.temperature,
 			streaming: options.streaming || false,
-			// Store file IDs and conversation settings for use in API calls
+			// Store document chat settings for use in API calls
 			modelKwargs: {
+				actualModel: model, // Store the actual model ('genius' or 'turbo')
 				fileIds: fileIdArray,
 				conversationId: conversationId || undefined,
 				reasoning: {
@@ -299,9 +304,12 @@ export class DocumentChatModelUpstage implements INodeType {
 				},
 			];
 
+			// Get the actual Document Chat model from modelKwargs
+			const actualModel = (this as any).modelKwargs?.actualModel || model;
+
 			// Build request body for Document Chat API
 			const requestBody: any = {
-				model,
+				model: actualModel, // Use 'genius' or 'turbo'
 				stream: false, // Disable streaming for now
 				input: [
 					{
