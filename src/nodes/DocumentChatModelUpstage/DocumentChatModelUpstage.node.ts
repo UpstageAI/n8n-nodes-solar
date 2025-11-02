@@ -1,10 +1,5 @@
-import { BaseChatModel } from '@langchain/core/language_models/chat_models';
-import type { BaseChatModelParams } from '@langchain/core/language_models/chat_models';
+import { ChatOpenAI } from '@langchain/openai';
 import type { BaseMessage } from '@langchain/core/messages';
-import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
-import type { ChatResult } from '@langchain/core/outputs';
-import { ChatGenerationChunk } from '@langchain/core/outputs';
-import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
 	type INodeType,
 	type INodeTypeDescription,
@@ -13,312 +8,174 @@ import {
 } from 'n8n-workflow';
 
 import { N8nLlmTracing } from '../../utils/N8nLlmTracing';
+import { makeN8nLlmFailedAttemptHandler } from '../../utils/n8nLlmFailedAttemptHandler';
+import { getHttpProxyAgent } from '../../utils/httpProxyAgent';
 import { getConnectionHintNoticeField } from '../../utils/sharedFields';
 
-// Custom chat model for Upstage Document Chat API
-interface DocumentChatConfig {
-	apiKey: string;
-	model: string;
-	fileIds: string[];
-	conversationId?: string;
-	reasoningEffort: string;
-	reasoningSummary: string;
-	temperature?: number;
-	streaming?: boolean;
-}
+/**
+ * Custom ChatOpenAI wrapper for Upstage Document Chat API
+ * This extends ChatOpenAI to transform messages into Document Chat format
+ */
+class UpstageDocumentChatModel extends ChatOpenAI {
+	private fileIds: string[];
+	private conversationId?: string;
+	private reasoningEffort: string;
+	private reasoningSummary: string;
 
-class UpstageDocumentChatModel extends BaseChatModel {
-	private config: DocumentChatConfig;
-
-	constructor(config: DocumentChatConfig, params?: BaseChatModelParams) {
-		// CRITICAL: Pass disableStreaming to parent constructor
-		// When config.streaming is true, disableStreaming should be false
-		super({
-			...params,
-			disableStreaming: !config.streaming,
-		});
-		this.config = config;
-	}
-
-	_llmType(): string {
-		return 'upstage-document-chat';
-	}
-
-	// Indicate that this model supports tool calling
-	bindTools(_tools: any[], _kwargs?: any): this {
-		// Document Chat doesn't directly support function calling,
-		// but we need to return 'this' to satisfy the interface
-		// The tools will be handled by the Agent framework
-		return this;
-	}
-
-	// CRITICAL: Override to indicate streaming support
-	// This tells LangChain that this model can stream
-	get streaming(): boolean {
-		return this.config.streaming || false;
-	}
-
-	// Implement streaming support
-	async *_streamResponseChunks(
-		messages: BaseMessage[],
-		_options: this['ParsedCallOptions'],
-		_runManager?: CallbackManagerForLLMRun,
-	): AsyncGenerator<ChatGenerationChunk> {
-		// Extract the user's query from the last message
-		const lastMessage = messages[messages.length - 1];
-		let query = '';
-		if (typeof lastMessage.content === 'string') {
-			query = lastMessage.content;
-		} else if (Array.isArray(lastMessage.content)) {
-			const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
-			query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
-		}
-
-		// Build input with file references
-		const inputFiles = this.config.fileIds.map((fileId: string) => ({
-			type: 'input_file',
-			file_id: fileId,
-		}));
-
-		const content = [
-			...inputFiles,
-			{
-				type: 'input_text',
-				text: query,
-			},
-		];
-
-		// Build request body for Document Chat API with streaming enabled
-		const requestBody: any = {
-			model: this.config.model,
-			stream: true, // Always use streaming in this method
-			input: [
-				{
-					role: 'user',
-					content,
-				},
-			],
-			reasoning: {
-				effort: this.config.reasoningEffort,
-				summary: this.config.reasoningSummary,
-			},
-		};
-
-		if (this.config.conversationId) {
-			requestBody.conversation = {
-				id: this.config.conversationId,
-			};
-		}
-
-		if (this.config.temperature !== undefined) {
-			requestBody.temperature = this.config.temperature;
-		}
-
-		// Make streaming API call
-		const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
-			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${this.config.apiKey}`,
+	constructor(config: {
+		apiKey: string;
+		model: string;
+		fileIds: string[];
+		conversationId?: string;
+		reasoningEffort: string;
+		reasoningSummary: string;
+		temperature?: number;
+		streaming?: boolean;
+		callbacks?: any[];
+		onFailedAttempt?: any;
+	}) {
+		// Call ChatOpenAI constructor with Document Chat API endpoint
+		const httpAgent = getHttpProxyAgent();
+		const configOptions: any = {
+			baseURL: 'https://api.upstage.ai/v1/document-chat',
+			defaultHeaders: {
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(requestBody),
+		};
+		if (httpAgent) {
+			configOptions.httpAgent = httpAgent;
+		}
+
+		super({
+			apiKey: config.apiKey,
+			model: config.model,
+			temperature: config.temperature,
+			streaming: config.streaming || false,
+			configuration: configOptions,
+			callbacks: config.callbacks,
+			onFailedAttempt: config.onFailedAttempt,
 		});
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
-		}
-
-		if (!response.body) {
-			throw new Error('Response body is null');
-		}
-
-		// Stream the response chunks
-		const reader = response.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				// Decode and add to buffer
-				buffer += decoder.decode(value, { stream: true });
-
-				// Split by lines but keep the last incomplete line in buffer
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || ''; // Keep incomplete line
-
-				for (const line of lines) {
-					// Skip event lines and empty lines
-					if (!line.trim()) continue;
-					if (line.startsWith('event:')) continue;
-					if (!line.startsWith('data: ')) continue;
-
-					const jsonStr = line.slice(6).trim();
-					if (jsonStr === '[DONE]') continue;
-
-					try {
-						const data = JSON.parse(jsonStr);
-
-						// Document Chat uses event-based SSE with different event types
-						// We're interested in "response.reasoning_summary_text.delta" events
-						let deltaText = '';
-
-						// Primary: reasoning_summary_text.delta (실제 응답 텍스트)
-						if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
-							deltaText = data.delta;
-							console.log('✅ Delta text found:', deltaText);
-						}
-						// Fallback: output_text delta
-						else if (data.type === 'response.output_text.delta' && data.delta) {
-							deltaText = data.delta;
-							console.log('✅ Output text delta found:', deltaText);
-						}
-						// Fallback: message content (non-streaming format)
-						else if (data.output && Array.isArray(data.output)) {
-							const messageOutput = data.output.find((item: any) => item.type === 'message');
-							if (messageOutput?.content?.[0]?.text) {
-								deltaText = messageOutput.content[0].text;
-								console.log('✅ Message content found:', deltaText.substring(0, 100));
-							}
-						}
-
-						// If we found text, yield it
-						if (deltaText) {
-							const chunk = new AIMessageChunk(deltaText);
-
-							// Yield proper ChatGenerationChunk
-							yield new ChatGenerationChunk({
-								text: deltaText,
-								message: chunk,
-								generationInfo: {
-									usage: data.usage,
-									conversation_id: data.conversation?.id || data.conversation_id,
-								},
-							});
-						}
-					} catch (e) {
-						console.error('❌ Failed to parse streaming chunk:', e);
-						// Skip invalid JSON lines
-						continue;
-					}
-				}
-			}
-		} finally {
-			reader.releaseLock();
-		}
+		this.fileIds = config.fileIds;
+		this.conversationId = config.conversationId;
+		this.reasoningEffort = config.reasoningEffort;
+		this.reasoningSummary = config.reasoningSummary;
 	}
 
-	async _generate(
-		messages: BaseMessage[],
-		options: this['ParsedCallOptions'],
-		runManager?: CallbackManagerForLLMRun,
-	): Promise<ChatResult> {
-		console.log('🔍 _generate called with:', {
-			streaming: this.config.streaming,
-			hasRunManager: !!runManager,
-		});
+	/**
+	 * Override to transform messages to Document Chat format
+	 * This method is called by ChatOpenAI before making the API call
+	 */
+	override invocationParams(options?: any): any {
+		const params = super.invocationParams(options);
 
-		// Non-streaming path only
-		// When streaming is enabled, LangChain should call _streamResponseChunks directly
-		console.log('⚠️ Taking NON-STREAMING path in _generate');
-		// Extract the user's query from the last message
+		// Add Document Chat specific parameters
+		return {
+			...params,
+			reasoning: {
+				effort: this.reasoningEffort as 'low' | 'medium' | 'high',
+				summary: this.reasoningSummary as 'auto' | 'enabled' | 'disabled',
+			},
+			...(this.conversationId && {
+				conversation: {
+					id: this.conversationId,
+				},
+			}),
+		};
+	}
+
+	/**
+	 * Override to transform messages into Document Chat input format
+	 * This is called before sending to API
+	 */
+	override async _generate(
+		messages: BaseMessage[],
+		options: any,
+		runManager?: any,
+	): Promise<any> {
+		// Extract query from last message
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
 		if (typeof lastMessage.content === 'string') {
 			query = lastMessage.content;
 		} else if (Array.isArray(lastMessage.content)) {
-			const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
-			query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
+			const textContent = lastMessage.content.find(
+				(c: any) => c.type === 'text' || typeof c === 'string'
+			);
+			query = typeof textContent === 'string'
+				? textContent
+				: (textContent as any)?.text || '';
 		}
 
-		// Build input with file references
-		const inputFiles = this.config.fileIds.map((fileId: string) => ({
-			type: 'input_file',
-			file_id: fileId,
-		}));
-
+		// Build Document Chat input format
 		const content = [
-			...inputFiles,
+			...this.fileIds.map(fileId => ({
+				type: 'input_file' as const,
+				file_id: fileId,
+			})),
 			{
-				type: 'input_text',
+				type: 'input_text' as const,
 				text: query,
 			},
 		];
 
-		// Build request body for Document Chat API (non-streaming)
-		const requestBody: any = {
-			model: this.config.model,
-			stream: false, // _generate is for non-streaming, _streamResponseChunks handles streaming
-			input: [
-				{
-					role: 'user',
-					content,
-				},
-			],
-			reasoning: {
-				effort: this.config.reasoningEffort,
-				summary: this.config.reasoningSummary,
+		// Create Document Chat formatted message
+		const documentChatMessages = [
+			{
+				role: 'user' as const,
+				content,
 			},
-		};
+		];
 
-		// Add conversation ID if specified
-		if (this.config.conversationId) {
-			requestBody.conversation = {
-				id: this.config.conversationId,
-			};
+		// Replace messages with Document Chat format and call parent
+		return super._generate(documentChatMessages as any, options, runManager);
+	}
+
+	/**
+	 * Override streaming to use Document Chat format
+	 */
+	override async *_streamResponseChunks(
+		messages: BaseMessage[],
+		options: any,
+		runManager?: any,
+	): AsyncGenerator<any> {
+		// Extract query from last message
+		const lastMessage = messages[messages.length - 1];
+		let query = '';
+		if (typeof lastMessage.content === 'string') {
+			query = lastMessage.content;
+		} else if (Array.isArray(lastMessage.content)) {
+			const contentArray = lastMessage.content as any[];
+			const textContent = contentArray.find(
+				(c: any) => c.type === 'text' || typeof c === 'string'
+			);
+			query = typeof textContent === 'string'
+				? textContent
+				: (textContent as any)?.text || '';
 		}
 
-		// Add temperature if specified
-		if (this.config.temperature !== undefined) {
-			requestBody.temperature = this.config.temperature;
-		}
+		// Build Document Chat input format
+		const content = [
+			...this.fileIds.map(fileId => ({
+				type: 'input_file' as const,
+				file_id: fileId,
+			})),
+			{
+				type: 'input_text' as const,
+				text: query,
+			},
+		];
 
-		// Make API call to Document Chat endpoint (non-streaming only)
-		try {
-			const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${this.config.apiKey}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(requestBody),
-			});
+		// Create Document Chat formatted message
+		const documentChatMessages = [
+			{
+				role: 'user' as const,
+				content,
+			},
+		];
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
-			}
-
-			// Parse non-streaming response
-			const data = await response.json();
-
-			// Extract the response text - matching DocumentChatUpstage.node.ts format
-			const output = data.output || [];
-			const messageOutput = output.find((item: any) => item.type === 'message');
-			const contentText = messageOutput?.content?.[0]?.text || '';
-
-			// Create AI message
-			const aiMessage = new AIMessage(contentText);
-
-			// Return in LangChain format
-			return {
-				generations: [
-					{
-						text: contentText,
-						message: aiMessage,
-					},
-				],
-				llmOutput: {
-					usage: data.usage,
-					conversation_id: data.conversation?.id,
-				},
-			};
-		} catch (error: any) {
-			throw new Error(`Failed to call Document Chat API: ${error.message}`);
-		}
+		// Use parent's streaming with transformed messages
+		yield* super._streamResponseChunks(documentChatMessages as any, options, runManager);
 	}
 }
 
@@ -500,11 +357,11 @@ export class DocumentChatModelUpstage implements INodeType {
 
 		// Create custom parser for Document Chat responses
 		const documentChatTokensParser = (llmOutput: any) => {
-			const usage = llmOutput?.usage;
+			const usage = llmOutput?.usage || llmOutput?.tokenUsage;
 			if (usage) {
-				const completionTokens = usage.output_tokens || 0;
-				const promptTokens = usage.input_tokens || 0;
-				const totalTokens = usage.total_tokens || completionTokens + promptTokens;
+				const completionTokens = usage.output_tokens || usage.completion_tokens || usage.completionTokens || 0;
+				const promptTokens = usage.input_tokens || usage.prompt_tokens || usage.promptTokens || 0;
+				const totalTokens = usage.total_tokens || usage.totalTokens || completionTokens + promptTokens;
 
 				console.log('🔍 Document Chat Token Usage:', {
 					completionTokens,
@@ -528,41 +385,29 @@ export class DocumentChatModelUpstage implements INodeType {
 			};
 		};
 
-		// Create tracing
+		// Create tracing and failure handler
 		const tracing = new N8nLlmTracing(this, {
 			tokensUsageParser: documentChatTokensParser,
 		});
+		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
-		// Build Document Chat configuration
-		console.log('🔍 Node options received:', JSON.stringify(options, null, 2));
-		console.log('🔍 Streaming option value:', options.streaming);
-
-		const documentChatConfig: DocumentChatConfig = {
+		// Create Document Chat model (wraps ChatOpenAI)
+		const chatModel = new UpstageDocumentChatModel({
 			apiKey: credentials.apiKey as string,
-			model: model, // 'genius' or 'turbo'
+			model: model,
 			fileIds: fileIdArray,
 			conversationId: conversationId || undefined,
 			reasoningEffort: options.reasoningEffort || 'medium',
 			reasoningSummary: options.reasoningSummary || 'auto',
 			temperature: options.temperature,
 			streaming: options.streaming || false,
-		};
-
-		console.log('🔍 DocumentChatConfig created with streaming:', documentChatConfig.streaming);
-
-		// Build LangChain model params
-		const modelParams: BaseChatModelParams = {};
-
-		// Add tracing callbacks if available
-		if (tracing) {
-			modelParams.callbacks = [tracing];
-		}
-
-		// Create custom Document Chat model instance
-		const chatModel = new UpstageDocumentChatModel(documentChatConfig, modelParams);
+			callbacks: tracing ? [tracing] : undefined,
+			onFailedAttempt: failureHandler,
+		});
 
 		console.log(`✅ Document Chat Model initialized with ${fileIdArray.length} file(s)`);
 		console.log(`📄 File IDs: ${fileIdArray.join(', ')}`);
+		console.log(`🔄 Streaming: ${options.streaming || false}`);
 		if (conversationId) {
 			console.log(`💬 Continuing conversation: ${conversationId}`);
 		}

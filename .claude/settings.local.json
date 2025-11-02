@@ -34,7 +34,8 @@
       "Bash(npm ls:*)",
       "Bash(npm test)",
       "Bash(git stash pop)",
-      "Bash(git stash)"
+      "Bash(git stash)",
+      "Bash(pkill -f test-document-chat-streaming)"
     ],
     "deny": []
   }
