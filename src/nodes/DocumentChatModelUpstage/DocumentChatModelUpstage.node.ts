@@ -31,7 +31,12 @@ class UpstageDocumentChatModel extends BaseChatModel {
 	private config: DocumentChatConfig;
 
 	constructor(config: DocumentChatConfig, params?: BaseChatModelParams) {
-		super(params || {});
+		// CRITICAL: Pass disableStreaming to parent constructor
+		// When config.streaming is true, disableStreaming should be false
+		super({
+			...params,
+			disableStreaming: !config.streaming,
+		});
 		this.config = config;
 	}
 
