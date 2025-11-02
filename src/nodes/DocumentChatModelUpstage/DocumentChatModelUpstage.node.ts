@@ -37,6 +37,14 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		return 'upstage-document-chat';
 	}
 
+	// Indicate that this model supports tool calling
+	bindTools(_tools: any[], _kwargs?: any): this {
+		// Document Chat doesn't directly support function calling,
+		// but we need to return 'this' to satisfy the interface
+		// The tools will be handled by the Agent framework
+		return this;
+	}
+
 	async _generate(
 		messages: BaseMessage[],
 		_options: this['ParsedCallOptions'],
