@@ -47,6 +47,11 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		return this;
 	}
 
+	// Override to indicate streaming support
+	get callKeys(): string[] {
+		return ['stop', 'signal', 'options', 'streaming'];
+	}
+
 	// Implement streaming support
 	async *_streamResponseChunks(
 		messages: BaseMessage[],
@@ -229,10 +234,10 @@ class UpstageDocumentChatModel extends BaseChatModel {
 			},
 		];
 
-		// Build request body for Document Chat API
+		// Build request body for Document Chat API (non-streaming)
 		const requestBody: any = {
 			model: this.config.model,
-			stream: this.config.streaming || false,
+			stream: false, // _generate is for non-streaming, _streamResponseChunks handles streaming
 			input: [
 				{
 					role: 'user',
@@ -257,7 +262,7 @@ class UpstageDocumentChatModel extends BaseChatModel {
 			requestBody.temperature = this.config.temperature;
 		}
 
-		// Make API call to Document Chat endpoint
+		// Make API call to Document Chat endpoint (non-streaming only)
 		try {
 			const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
 				method: 'POST',
@@ -273,69 +278,7 @@ class UpstageDocumentChatModel extends BaseChatModel {
 				throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
 			}
 
-			// Handle streaming response
-			if (this.config.streaming && response.body) {
-				let fullText = '';
-				let conversationId = '';
-				let usage: any = null;
-
-				const reader = response.body.getReader();
-				const decoder = new TextDecoder();
-
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-
-					const chunk = decoder.decode(value, { stream: true });
-					const lines = chunk.split('\n');
-
-					for (const line of lines) {
-						if (!line.trim() || !line.startsWith('data: ')) continue;
-
-						const jsonStr = line.slice(6); // Remove 'data: ' prefix
-						if (jsonStr === '[DONE]') continue;
-
-						try {
-							const data = JSON.parse(jsonStr);
-
-							// Extract text from streaming chunks
-							if (data.output && Array.isArray(data.output)) {
-								const messageOutput = data.output.find((item: any) => item.type === 'message');
-								if (messageOutput?.content?.[0]?.text) {
-									fullText += messageOutput.content[0].text;
-								}
-							}
-
-							// Collect metadata
-							if (data.conversation?.id) {
-								conversationId = data.conversation.id;
-							}
-							if (data.usage) {
-								usage = data.usage;
-							}
-						} catch (e) {
-							// Skip invalid JSON lines
-							continue;
-						}
-					}
-				}
-
-				const aiMessage = new AIMessage(fullText);
-				return {
-					generations: [
-						{
-							text: fullText,
-							message: aiMessage,
-						},
-					],
-					llmOutput: {
-						usage,
-						conversation_id: conversationId,
-					},
-				};
-			}
-
-			// Handle non-streaming response
+			// Parse non-streaming response
 			const data = await response.json();
 
 			// Extract the response text - matching DocumentChatUpstage.node.ts format
