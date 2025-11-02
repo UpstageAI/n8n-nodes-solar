@@ -8,6 +8,7 @@ export { DocumentParsingUpstage } from './nodes/DocumentParsingUpstage/DocumentP
 export { DocumentOCRUpstage } from './nodes/DocumentOCRUpstage/DocumentOCRUpstage.node';
 export { InformationExtractionUpstage } from './nodes/InformationExtractionUpstage/InformationExtractionUpstage.node';
 export { DocumentClassificationUpstage } from './nodes/DocumentClassificationUpstage/DocumentClassificationUpstage.node';
+export { DocumentChatUpstage } from './nodes/DocumentChatUpstage/DocumentChatUpstage.node';
 
 // Export LangChain compatible nodes
 export { LmChatModelUpstage } from './nodes/LmChatModelUpstage/LmChatModelUpstage.node';
