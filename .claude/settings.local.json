@@ -32,7 +32,9 @@
       "Bash(gh pr close:*)",
       "Bash(npm audit:*)",
       "Bash(npm ls:*)",
-      "Bash(npm test)"
+      "Bash(npm test)",
+      "Bash(git stash pop)",
+      "Bash(git stash)"
     ],
     "deny": []
   }

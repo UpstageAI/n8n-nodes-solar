@@ -192,11 +192,10 @@ export class DocumentChatModelUpstage implements INodeType {
 			throw new Error('At least one valid file ID is required.');
 		}
 
-		// IMPORTANT: Don't use document-chat in baseURL
-		// ChatOpenAI will add /chat/completions to baseURL, causing 404
-		// We'll override _generate to call the correct endpoint
+		// Document Chat API doesn't use OpenAI-compatible endpoints
+		// We override _generate to call the Document Chat API directly
 		const configuration = {
-			baseURL: 'https://api.upstage.ai/v1/solar',
+			baseURL: 'https://api.upstage.ai/v1/document-chat',
 			httpAgent: getHttpProxyAgent(),
 			defaultHeaders: {
 				'Content-Type': 'application/json',
@@ -240,11 +239,10 @@ export class DocumentChatModelUpstage implements INodeType {
 		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
 		// Build model configuration
-		// IMPORTANT: Use a valid Solar model name for initialization
-		// We'll use the actual 'genius' or 'turbo' model in _generate override
+		// Use the actual Document Chat model name selected by user
 		const modelConfig: any = {
 			apiKey: credentials.apiKey as string,
-			model: 'solar-mini', // Use a valid model name for initialization
+			model: model, // Use 'genius' or 'turbo' directly
 			configuration,
 			temperature: options.temperature,
 			streaming: options.streaming || false,
