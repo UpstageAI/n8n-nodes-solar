@@ -140,7 +140,10 @@ class UpstageDocumentChatModel extends BaseChatModel {
 				buffer = lines.pop() || ''; // Keep incomplete line
 
 				for (const line of lines) {
-					if (!line.trim() || !line.startsWith('data: ')) continue;
+					// Skip event lines and empty lines
+					if (!line.trim()) continue;
+					if (line.startsWith('event:')) continue;
+					if (!line.startsWith('data: ')) continue;
 
 					const jsonStr = line.slice(6).trim();
 					if (jsonStr === '[DONE]') continue;
@@ -148,32 +151,42 @@ class UpstageDocumentChatModel extends BaseChatModel {
 					try {
 						const data = JSON.parse(jsonStr);
 
-						console.log('🔍 Streaming chunk received:', JSON.stringify(data, null, 2));
+						// Document Chat uses event-based SSE with different event types
+						// We're interested in "response.reasoning_summary_text.delta" events
+						let deltaText = '';
 
-						// Extract text from streaming chunk
-						if (data.output && Array.isArray(data.output)) {
+						// Primary: reasoning_summary_text.delta (실제 응답 텍스트)
+						if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
+							deltaText = data.delta;
+							console.log('✅ Delta text found:', deltaText);
+						}
+						// Fallback: output_text delta
+						else if (data.type === 'response.output_text.delta' && data.delta) {
+							deltaText = data.delta;
+							console.log('✅ Output text delta found:', deltaText);
+						}
+						// Fallback: message content (non-streaming format)
+						else if (data.output && Array.isArray(data.output)) {
 							const messageOutput = data.output.find((item: any) => item.type === 'message');
 							if (messageOutput?.content?.[0]?.text) {
-								const text = messageOutput.content[0].text;
-
-								console.log('✅ Yielding text chunk:', text.substring(0, 100) + '...');
-
-								const chunk = new AIMessageChunk(text);
-
-								// Yield proper ChatGenerationChunk
-								yield new ChatGenerationChunk({
-									text,
-									message: chunk,
-									generationInfo: {
-										usage: data.usage,
-										conversation_id: data.conversation?.id,
-									},
-								});
-							} else {
-								console.log('⚠️ No text found in message output:', messageOutput);
+								deltaText = messageOutput.content[0].text;
+								console.log('✅ Message content found:', deltaText.substring(0, 100));
 							}
-						} else {
-							console.log('⚠️ No output array in data:', data);
+						}
+
+						// If we found text, yield it
+						if (deltaText) {
+							const chunk = new AIMessageChunk(deltaText);
+
+							// Yield proper ChatGenerationChunk
+							yield new ChatGenerationChunk({
+								text: deltaText,
+								message: chunk,
+								generationInfo: {
+									usage: data.usage,
+									conversation_id: data.conversation?.id || data.conversation_id,
+								},
+							});
 						}
 					} catch (e) {
 						console.error('❌ Failed to parse streaming chunk:', e);
@@ -572,7 +585,7 @@ export class DocumentChatModelUpstage implements INodeType {
 			reasoningEffort: options.reasoningEffort || 'medium',
 			reasoningSummary: options.reasoningSummary || 'auto',
 			temperature: options.temperature,
-			streaming: false, // Temporarily disable streaming until API response format is confirmed
+			streaming: options.streaming || false,
 		};
 
 		// Build LangChain model params
