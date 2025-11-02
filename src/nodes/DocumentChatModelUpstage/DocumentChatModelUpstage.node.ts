@@ -1,5 +1,9 @@
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseMessage } from '@langchain/core/messages';
+import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
+import type { ChatResult } from '@langchain/core/outputs';
+import { ChatGenerationChunk } from '@langchain/core/outputs';
+import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
 	type INodeType,
 	type INodeTypeDescription,
@@ -13,7 +17,7 @@ import { getConnectionHintNoticeField } from '../../utils/sharedFields';
 
 /**
  * Custom ChatOpenAI wrapper for Upstage Document Chat API
- * Extends ChatOpenAI but overrides the endpoint to use /responses instead of /chat/completions
+ * Overrides _generate and _streamResponseChunks to use Document Chat endpoints
  */
 class UpstageDocumentChatModel extends ChatOpenAI {
 	private fileIds: string[];
@@ -41,14 +45,12 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		});
 
 		// Call ChatOpenAI constructor
-		// We'll override the endpoint in completionWithRetry
 		super({
 			apiKey: config.apiKey,
 			model: config.model,
 			temperature: config.temperature,
 			streaming: config.streaming || false,
 			configuration: {
-				// Use base Document Chat URL (we'll add /responses in completionWithRetry)
 				baseURL: 'https://api.upstage.ai/v1/document-chat',
 			},
 			callbacks: config.callbacks,
@@ -64,77 +66,144 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 	}
 
 	/**
-	 * Override the completion method to use /responses endpoint
-	 * This is the critical method that ChatOpenAI uses to make API calls
+	 * Override _generate for non-streaming requests
+	 * This is called by LangChain when streaming is disabled
 	 */
-	async completionWithRetry(
-		request: any,
-		options?: any,
-	): Promise<any> {
-		console.log('🚀 completionWithRetry called');
-		console.log('📤 Original request:', JSON.stringify(request, null, 2));
-		console.log('⚙️ Options:', JSON.stringify(options, null, 2));
+	override async _generate(
+		messages: BaseMessage[],
+		options: this['ParsedCallOptions'],
+		runManager?: CallbackManagerForLLMRun,
+	): Promise<ChatResult> {
+		console.log('🚀 _generate called (non-streaming)');
+		console.log('📨 Messages:', messages.length);
 
-		// Transform the request to Document Chat format
-		const documentChatRequest = this.transformToDocumentChatFormat(request);
+		const response = await this.callDocumentChatAPI(messages, false, options?.signal);
 
-		console.log('📤 Transformed Document Chat request:', JSON.stringify(documentChatRequest, null, 2));
+		console.log('📥 API Response received');
+		console.log('📊 Response data:', JSON.stringify(response, null, 2));
 
-		// ChatOpenAI uses the 'client' property which has a 'chat.completions.create()' method
-		// We need to directly call fetch to use the correct endpoint
-		const url = 'https://api.upstage.ai/v1/document-chat/responses';
-		console.log('🌐 Calling endpoint:', url);
+		// Extract content from Document Chat response
+		const output = response.output || [];
+		const messageOutput = output.find((item: any) => item.type === 'message');
+		const contentText = messageOutput?.content?.[0]?.text || '';
+
+		console.log('✅ Extracted content length:', contentText.length);
+
+		return {
+			generations: [
+				{
+					text: contentText,
+					message: new AIMessage(contentText),
+				},
+			],
+			llmOutput: {
+				usage: response.usage,
+				conversation_id: response.conversation?.id,
+			},
+		};
+	}
+
+	/**
+	 * Override _streamResponseChunks for streaming requests
+	 * This is called by LangChain when streaming is enabled
+	 */
+	override async *_streamResponseChunks(
+		messages: BaseMessage[],
+		options: this['ParsedCallOptions'],
+		runManager?: CallbackManagerForLLMRun,
+	): AsyncGenerator<ChatGenerationChunk> {
+		console.log('🚀 _streamResponseChunks called (streaming)');
+		console.log('📨 Messages:', messages.length);
+		console.log('🔄 Starting SSE stream parsing...');
+
+		const response = await this.callDocumentChatAPI(messages, true, options?.signal);
+
+		if (!response.body) {
+			throw new Error('No response body for streaming');
+		}
+
+		// Parse SSE stream
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
 
 		try {
-			const response = await fetch(url, {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${(this as any).apiKey}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(documentChatRequest),
-				signal: options?.signal,
-			});
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) {
+					console.log('✅ Stream completed');
+					break;
+				}
 
-			console.log('📥 Response status:', response.status, response.statusText);
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || '';
 
-			if (!response.ok) {
-				const errorText = await response.text();
-				console.error('❌ API Error:', errorText);
-				throw new Error(`Document Chat API error: ${response.status} - ${errorText}`);
+				for (const line of lines) {
+					if (!line.trim()) continue;
+					if (line.startsWith('event:')) continue;
+					if (!line.startsWith('data: ')) continue;
+
+					const jsonStr = line.slice(6).trim();
+					if (jsonStr === '[DONE]') continue;
+
+					try {
+						const data = JSON.parse(jsonStr);
+
+						// Extract delta text from Document Chat events
+						let deltaText = '';
+
+						if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
+							deltaText = data.delta;
+							console.log('📝 Reasoning delta:', deltaText.substring(0, 50));
+						} else if (data.type === 'response.output_text.delta' && data.delta) {
+							deltaText = data.delta;
+							console.log('📝 Output delta:', deltaText.substring(0, 50));
+						}
+
+						if (deltaText) {
+							// Send token to runManager for n8n display
+							if (runManager) {
+								await runManager.handleLLMNewToken(deltaText);
+							}
+
+							// Yield chunk for LangChain
+							yield new ChatGenerationChunk({
+								text: deltaText,
+								message: new AIMessageChunk(deltaText),
+								generationInfo: {
+									usage: data.usage,
+									conversation_id: data.conversation?.id || data.conversation_id,
+								},
+							});
+						}
+					} catch (e) {
+						console.error('❌ Failed to parse SSE chunk:', e);
+						continue;
+					}
+				}
 			}
-
-			// If streaming, return the response body for SSE parsing
-			if (documentChatRequest.stream) {
-				console.log('🔄 Returning streaming response');
-				return response;
-			}
-
-			// Non-streaming: parse JSON
-			const data = await response.json();
-			console.log('📥 Response data:', JSON.stringify(data, null, 2));
-			return this.transformFromDocumentChatFormat(data);
-		} catch (error: any) {
-			console.error('❌ completionWithRetry error:', error);
-			throw error;
+		} finally {
+			reader.releaseLock();
 		}
 	}
 
 	/**
-	 * Transform OpenAI format request to Document Chat format
+	 * Make API call to Document Chat endpoint
 	 */
-	private transformToDocumentChatFormat(request: any): any {
-		console.log('🔄 Transforming to Document Chat format');
-
-		// Extract the user query from messages
-		const messages = request.messages || [];
+	private async callDocumentChatAPI(
+		messages: BaseMessage[],
+		stream: boolean,
+		signal?: AbortSignal,
+	): Promise<any> {
+		// Extract query from last message
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
 
-		if (typeof lastMessage?.content === 'string') {
+		if (typeof lastMessage.content === 'string') {
 			query = lastMessage.content;
-		} else if (Array.isArray(lastMessage?.content)) {
-			const textContent = lastMessage.content.find(
+		} else if (Array.isArray(lastMessage.content)) {
+			const textContent = (lastMessage.content as any[]).find(
 				(c: any) => c.type === 'text' || typeof c === 'string'
 			);
 			query = typeof textContent === 'string'
@@ -142,9 +211,9 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 				: (textContent as any)?.text || '';
 		}
 
-		console.log('📝 Extracted query:', query);
+		console.log('📝 Query extracted:', query.substring(0, 100));
 
-		// Build Document Chat input format
+		// Build Document Chat request
 		const content = [
 			...this.fileIds.map(fileId => ({
 				type: 'input_file' as const,
@@ -156,9 +225,9 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 			},
 		];
 
-		const documentChatRequest: any = {
-			model: request.model,
-			stream: request.stream || false,
+		const requestBody: any = {
+			model: this.model,
+			stream,
 			input: [
 				{
 					role: 'user',
@@ -172,66 +241,42 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		};
 
 		if (this.conversationId) {
-			documentChatRequest.conversation = {
-				id: this.conversationId,
-			};
+			requestBody.conversation = { id: this.conversationId };
 		}
 
-		if (request.temperature !== undefined) {
-			documentChatRequest.temperature = request.temperature;
+		if (this.temperature !== undefined) {
+			requestBody.temperature = this.temperature;
 		}
 
-		console.log('✅ Transformed request ready');
-		return documentChatRequest;
-	}
+		console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
 
-	/**
-	 * Transform Document Chat response to OpenAI format
-	 */
-	private transformFromDocumentChatFormat(data: any): any {
-		console.log('🔄 Transforming from Document Chat format');
+		const url = 'https://api.upstage.ai/v1/document-chat/responses';
+		console.log('🌐 Calling endpoint:', url);
 
-		// Extract the response text
-		const output = data.output || [];
-		const messageOutput = output.find((item: any) => item.type === 'message');
-		const contentText = messageOutput?.content?.[0]?.text || '';
-
-		console.log('📝 Extracted content:', contentText.substring(0, 100) + '...');
-
-		// Transform to OpenAI format
-		const openAIFormat = {
-			id: data.id || 'unknown',
-			object: 'chat.completion',
-			created: data.created_at || Math.floor(Date.now() / 1000),
-			model: data.model || this.model,
-			choices: [
-				{
-					index: 0,
-					message: {
-						role: 'assistant',
-						content: contentText,
-					},
-					finish_reason: 'stop',
-				},
-			],
-			usage: {
-				prompt_tokens: data.usage?.input_tokens || 0,
-				completion_tokens: data.usage?.output_tokens || 0,
-				total_tokens: data.usage?.total_tokens || 0,
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${(this as any).apiKey}`,
+				'Content-Type': 'application/json',
 			},
-		};
+			body: JSON.stringify(requestBody),
+			signal,
+		});
 
-		console.log('✅ Transformed to OpenAI format');
-		return openAIFormat;
-	}
+		console.log('📥 Response status:', response.status, response.statusText);
 
-	/**
-	 * Override invocationParams to add Document Chat specific parameters
-	 */
-	override invocationParams(options?: any): any {
-		const params = super.invocationParams(options);
-		console.log('📋 invocationParams called, returning params:', JSON.stringify(params, null, 2));
-		return params;
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error('❌ API Error:', errorText);
+			throw new Error(`Document Chat API error: ${response.status} - ${errorText}`);
+		}
+
+		// Return response (stream or JSON)
+		if (stream) {
+			return response;
+		} else {
+			return await response.json();
+		}
 	}
 }
 
