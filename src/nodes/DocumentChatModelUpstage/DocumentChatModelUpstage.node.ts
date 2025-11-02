@@ -125,29 +125,39 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		// Stream the response chunks
 		const reader = response.body.getReader();
 		const decoder = new TextDecoder();
+		let buffer = '';
 
 		try {
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
 
-				const chunk = decoder.decode(value, { stream: true });
-				const lines = chunk.split('\n');
+				// Decode and add to buffer
+				buffer += decoder.decode(value, { stream: true });
+
+				// Split by lines but keep the last incomplete line in buffer
+				const lines = buffer.split('\n');
+				buffer = lines.pop() || ''; // Keep incomplete line
 
 				for (const line of lines) {
 					if (!line.trim() || !line.startsWith('data: ')) continue;
 
-					const jsonStr = line.slice(6);
+					const jsonStr = line.slice(6).trim();
 					if (jsonStr === '[DONE]') continue;
 
 					try {
 						const data = JSON.parse(jsonStr);
+
+						console.log('🔍 Streaming chunk received:', JSON.stringify(data, null, 2));
 
 						// Extract text from streaming chunk
 						if (data.output && Array.isArray(data.output)) {
 							const messageOutput = data.output.find((item: any) => item.type === 'message');
 							if (messageOutput?.content?.[0]?.text) {
 								const text = messageOutput.content[0].text;
+
+								console.log('✅ Yielding text chunk:', text.substring(0, 100) + '...');
+
 								const chunk = new AIMessageChunk(text);
 
 								// Yield proper ChatGenerationChunk
@@ -159,9 +169,14 @@ class UpstageDocumentChatModel extends BaseChatModel {
 										conversation_id: data.conversation?.id,
 									},
 								});
+							} else {
+								console.log('⚠️ No text found in message output:', messageOutput);
 							}
+						} else {
+							console.log('⚠️ No output array in data:', data);
 						}
 					} catch (e) {
+						console.error('❌ Failed to parse streaming chunk:', e);
 						// Skip invalid JSON lines
 						continue;
 					}
