@@ -210,13 +210,21 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		options: this['ParsedCallOptions'],
 		runManager?: CallbackManagerForLLMRun,
 	): Promise<ChatResult> {
+		console.log('🔍 _generate called with:', {
+			streaming: this.config.streaming,
+			hasRunManager: !!runManager,
+			runManagerMethods: runManager ? Object.keys(runManager) : [],
+		});
+
 		// If streaming is enabled, delegate to _streamResponseChunks and collect results
 		if (this.config.streaming && runManager) {
+			console.log('✅ Taking STREAMING path in _generate');
 			const stream = this._streamResponseChunks(messages, options, runManager);
 			let fullText = '';
 			let lastGenerationInfo: Record<string, any> = {};
 
 			for await (const chunk of stream) {
+				console.log('📦 Received chunk in _generate:', chunk.text.substring(0, 50));
 				fullText += chunk.text;
 				if (chunk.generationInfo) {
 					lastGenerationInfo = chunk.generationInfo;
@@ -225,6 +233,7 @@ class UpstageDocumentChatModel extends BaseChatModel {
 				await runManager?.handleLLMNewToken(chunk.text);
 			}
 
+			console.log('✅ Streaming complete, total length:', fullText.length);
 			const aiMessage = new AIMessage(fullText);
 			return {
 				generations: [
@@ -238,6 +247,7 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		}
 
 		// Non-streaming path
+		console.log('⚠️ Taking NON-STREAMING path in _generate');
 		// Extract the user's query from the last message
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
