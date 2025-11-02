@@ -1,4 +1,4 @@
-import { ChatOpenAI } from '@langchain/openai';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import type { BaseMessage } from '@langchain/core/messages';
 import { AIMessage } from '@langchain/core/messages';
@@ -12,9 +12,137 @@ import {
 } from 'n8n-workflow';
 
 import { N8nLlmTracing } from '../../utils/N8nLlmTracing';
-import { makeN8nLlmFailedAttemptHandler } from '../../utils/n8nLlmFailedAttemptHandler';
-import { getHttpProxyAgent } from '../../utils/httpProxyAgent';
 import { getConnectionHintNoticeField } from '../../utils/sharedFields';
+
+// Custom chat model for Upstage Document Chat API
+interface DocumentChatConfig {
+	apiKey: string;
+	model: string;
+	fileIds: string[];
+	conversationId?: string;
+	reasoningEffort: string;
+	reasoningSummary: string;
+	temperature?: number;
+}
+
+class UpstageDocumentChatModel extends BaseChatModel {
+	private config: DocumentChatConfig;
+
+	constructor(config: DocumentChatConfig, params?: BaseChatModelParams) {
+		super(params || {});
+		this.config = config;
+	}
+
+	_llmType(): string {
+		return 'upstage-document-chat';
+	}
+
+	async _generate(
+		messages: BaseMessage[],
+		_options: this['ParsedCallOptions'],
+		_runManager?: CallbackManagerForLLMRun,
+	): Promise<ChatResult> {
+		// Extract the user's query from the last message
+		const lastMessage = messages[messages.length - 1];
+		let query = '';
+		if (typeof lastMessage.content === 'string') {
+			query = lastMessage.content;
+		} else if (Array.isArray(lastMessage.content)) {
+			const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
+			query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
+		}
+
+		// Build input with file references
+		const inputFiles = this.config.fileIds.map((fileId: string) => ({
+			type: 'input_file',
+			file_id: fileId,
+		}));
+
+		const content = [
+			...inputFiles,
+			{
+				type: 'input_text',
+				text: query,
+			},
+		];
+
+		// Build request body for Document Chat API
+		const requestBody: any = {
+			model: this.config.model,
+			stream: false,
+			input: [
+				{
+					role: 'user',
+					content,
+				},
+			],
+			reasoning: {
+				effort: this.config.reasoningEffort,
+				summary: this.config.reasoningSummary,
+			},
+		};
+
+		// Add conversation ID if specified
+		if (this.config.conversationId) {
+			requestBody.conversation = {
+				id: this.config.conversationId,
+			};
+		}
+
+		// Add temperature if specified
+		if (this.config.temperature !== undefined) {
+			requestBody.temperature = this.config.temperature;
+		}
+
+		// Make API call to Document Chat endpoint
+		try {
+			const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${this.config.apiKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(requestBody),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
+			}
+
+			const data = await response.json();
+
+			// Extract the response text
+			let contentText = '';
+			if (data.output && Array.isArray(data.output)) {
+				for (const item of data.output) {
+					if (item.type === 'output_text') {
+						contentText += item.text;
+					}
+				}
+			}
+
+			// Create AI message
+			const aiMessage = new AIMessage(contentText);
+
+			// Return in LangChain format
+			return {
+				generations: [
+					{
+						text: contentText,
+						message: aiMessage,
+					},
+				],
+				llmOutput: {
+					usage: data.usage,
+					conversation_id: data.conversation?.id,
+				},
+			};
+		} catch (error: any) {
+			throw new Error(`Failed to call Document Chat API: ${error.message}`);
+		}
+	}
+}
 
 export class DocumentChatModelUpstage implements INodeType {
 	description: INodeTypeDescription = {
@@ -192,16 +320,6 @@ export class DocumentChatModelUpstage implements INodeType {
 			throw new Error('At least one valid file ID is required.');
 		}
 
-		// Document Chat API doesn't use OpenAI-compatible endpoints
-		// We override _generate to call the Document Chat API directly
-		const configuration = {
-			baseURL: 'https://api.upstage.ai/v1/document-chat',
-			httpAgent: getHttpProxyAgent(),
-			defaultHeaders: {
-				'Content-Type': 'application/json',
-			},
-		};
-
 		// Create custom parser for Document Chat responses
 		const documentChatTokensParser = (llmOutput: any) => {
 			const usage = llmOutput?.usage;
@@ -232,166 +350,32 @@ export class DocumentChatModelUpstage implements INodeType {
 			};
 		};
 
-		// Create tracing and failure handler
+		// Create tracing
 		const tracing = new N8nLlmTracing(this, {
 			tokensUsageParser: documentChatTokensParser,
 		});
-		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
-		// Build model configuration
-		// Use the actual Document Chat model name selected by user
-		const modelConfig: any = {
+		// Build Document Chat configuration
+		const documentChatConfig: DocumentChatConfig = {
 			apiKey: credentials.apiKey as string,
-			model: model, // Use 'genius' or 'turbo' directly
-			configuration,
-			temperature: options.temperature,
-			streaming: options.streaming || false,
-			// Don't use modelKwargs - it gets sent in API requests!
-		};
-
-		// Add tracing callbacks if available
-		if (tracing) {
-			modelConfig.callbacks = [tracing];
-		}
-
-		// Add failure handler if available
-		if (failureHandler) {
-			modelConfig.onFailedAttempt = failureHandler;
-		}
-
-		// Create a custom ChatOpenAI instance
-		const chatModel = new ChatOpenAI(modelConfig);
-
-		// Store Document Chat configuration directly on the instance
-		// (not in modelKwargs, which gets sent to API)
-		(chatModel as any).documentChatConfig = {
-			actualModel: model, // 'genius' or 'turbo'
+			model: model, // 'genius' or 'turbo'
 			fileIds: fileIdArray,
 			conversationId: conversationId || undefined,
 			reasoningEffort: options.reasoningEffort || 'medium',
 			reasoningSummary: options.reasoningSummary || 'auto',
-			apiKey: credentials.apiKey as string,
+			temperature: options.temperature,
 		};
 
-		// Override _generate to use Document Chat API instead of OpenAI API
-		const originalGenerate = chatModel._generate.bind(chatModel);
-		chatModel._generate = async function(
-			messages: BaseMessage[],
-			_options: any,
-			_runManager?: CallbackManagerForLLMRun
-		): Promise<ChatResult> {
-			// Get Document Chat configuration
-			const config = (this as any).documentChatConfig;
-			if (!config) {
-				throw new Error('Document Chat configuration not found');
-			}
+		// Build LangChain model params
+		const modelParams: BaseChatModelParams = {};
 
-			// Extract the user's query from the last message
-			const lastMessage = messages[messages.length - 1];
-			let query = '';
-			if (typeof lastMessage.content === 'string') {
-				query = lastMessage.content;
-			} else if (Array.isArray(lastMessage.content)) {
-				const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
-				query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
-			}
+		// Add tracing callbacks if available
+		if (tracing) {
+			modelParams.callbacks = [tracing];
+		}
 
-			// Build input with file references
-			const inputFiles = config.fileIds.map((fileId: string) => ({
-				type: 'input_file',
-				file_id: fileId,
-			}));
-
-			const content = [
-				...inputFiles,
-				{
-					type: 'input_text',
-					text: query,
-				},
-			];
-
-			// Build request body for Document Chat API
-			const requestBody: any = {
-				model: config.actualModel, // Use 'genius' or 'turbo'
-				stream: false, // Disable streaming for now
-				input: [
-					{
-						role: 'user',
-						content,
-					},
-				],
-			};
-
-			// Add reasoning configuration
-			requestBody.reasoning = {
-				effort: config.reasoningEffort,
-				summary: config.reasoningSummary,
-			};
-
-			// Add conversation ID if specified
-			if (config.conversationId) {
-				requestBody.conversation = {
-					id: config.conversationId,
-				};
-			}
-
-			// Make API call to Document Chat endpoint
-			try {
-				const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
-					method: 'POST',
-					headers: {
-						'Authorization': `Bearer ${config.apiKey}`,
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify(requestBody),
-				});
-
-				if (!response.ok) {
-					const errorText = await response.text();
-					throw new Error(`Document Chat API error (${response.status}): ${errorText}`);
-				}
-
-				const data = await response.json();
-
-				// Extract content from Document Chat response
-				const output = data.output || [];
-				const messageOutput = output.find((item: any) => item.type === 'message');
-				const contentText = messageOutput?.content?.[0]?.text || '';
-				const citations = messageOutput?.content?.[0]?.annotations || [];
-
-				// Create AIMessage with proper structure
-				const aiMessage = new AIMessage({
-					content: contentText,
-					additional_kwargs: {
-						conversation_id: data.conversation?.id,
-						citations,
-					},
-				});
-
-				// Return in LangChain ChatResult format
-				return {
-					generations: [
-						{
-							text: contentText,
-							message: aiMessage,
-						},
-					],
-					llmOutput: {
-						usage: data.usage,
-						conversation_id: data.conversation?.id,
-					},
-				};
-			} catch (error) {
-				console.error('🚫 Document Chat Model Error:', error);
-				throw error;
-			}
-		};
-
-		// Override _llmType to identify this as Document Chat
-		Object.defineProperty(chatModel, '_llmType', {
-			value: () => 'upstage-document-chat',
-			writable: false,
-		});
+		// Create custom Document Chat model instance
+		const chatModel = new UpstageDocumentChatModel(documentChatConfig, modelParams);
 
 		console.log(`✅ Document Chat Model initialized with ${fileIdArray.length} file(s)`);
 		console.log(`📄 File IDs: ${fileIdArray.join(', ')}`);
