@@ -23,6 +23,7 @@ interface DocumentChatConfig {
 	reasoningEffort: string;
 	reasoningSummary: string;
 	temperature?: number;
+	streaming?: boolean;
 }
 
 class UpstageDocumentChatModel extends BaseChatModel {
@@ -77,7 +78,7 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		// Build request body for Document Chat API
 		const requestBody: any = {
 			model: this.config.model,
-			stream: false,
+			stream: this.config.streaming || false,
 			input: [
 				{
 					role: 'user',
@@ -118,6 +119,69 @@ class UpstageDocumentChatModel extends BaseChatModel {
 				throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
 			}
 
+			// Handle streaming response
+			if (this.config.streaming && response.body) {
+				let fullText = '';
+				let conversationId = '';
+				let usage: any = null;
+
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					const chunk = decoder.decode(value, { stream: true });
+					const lines = chunk.split('\n');
+
+					for (const line of lines) {
+						if (!line.trim() || !line.startsWith('data: ')) continue;
+
+						const jsonStr = line.slice(6); // Remove 'data: ' prefix
+						if (jsonStr === '[DONE]') continue;
+
+						try {
+							const data = JSON.parse(jsonStr);
+
+							// Extract text from streaming chunks
+							if (data.output && Array.isArray(data.output)) {
+								const messageOutput = data.output.find((item: any) => item.type === 'message');
+								if (messageOutput?.content?.[0]?.text) {
+									fullText += messageOutput.content[0].text;
+								}
+							}
+
+							// Collect metadata
+							if (data.conversation?.id) {
+								conversationId = data.conversation.id;
+							}
+							if (data.usage) {
+								usage = data.usage;
+							}
+						} catch (e) {
+							// Skip invalid JSON lines
+							continue;
+						}
+					}
+				}
+
+				const aiMessage = new AIMessage(fullText);
+				return {
+					generations: [
+						{
+							text: fullText,
+							message: aiMessage,
+						},
+					],
+					llmOutput: {
+						usage,
+						conversation_id: conversationId,
+					},
+				};
+			}
+
+			// Handle non-streaming response
 			const data = await response.json();
 
 			// Extract the response text - matching DocumentChatUpstage.node.ts format
@@ -367,6 +431,7 @@ export class DocumentChatModelUpstage implements INodeType {
 			reasoningEffort: options.reasoningEffort || 'medium',
 			reasoningSummary: options.reasoningSummary || 'auto',
 			temperature: options.temperature,
+			streaming: options.streaming || false,
 		};
 
 		// Build LangChain model params
