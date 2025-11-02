@@ -572,7 +572,7 @@ export class DocumentChatModelUpstage implements INodeType {
 			reasoningEffort: options.reasoningEffort || 'medium',
 			reasoningSummary: options.reasoningSummary || 'auto',
 			temperature: options.temperature,
-			streaming: options.streaming || false,
+			streaming: false, // Temporarily disable streaming until API response format is confirmed
 		};
 
 		// Build LangChain model params
