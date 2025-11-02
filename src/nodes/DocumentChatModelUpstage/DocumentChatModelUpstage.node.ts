@@ -1,4 +1,9 @@
 import { ChatOpenAI } from '@langchain/openai';
+import type { BaseChatModelParams } from '@langchain/core/language_models/chat_models';
+import type { BaseMessage } from '@langchain/core/messages';
+import { AIMessage } from '@langchain/core/messages';
+import type { ChatResult } from '@langchain/core/outputs';
+import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
 	type INodeType,
 	type INodeTypeDescription,
@@ -260,30 +265,124 @@ export class DocumentChatModelUpstage implements INodeType {
 			modelConfig.onFailedAttempt = failureHandler;
 		}
 
-		// Create a custom ChatOpenAI instance that uses Document Chat API
-		// We configure it to use solar models through Upstage's OpenAI-compatible endpoint
+		// Create a custom ChatOpenAI instance
 		const chatModel = new ChatOpenAI(modelConfig);
 
-		// Store file context in a way the model can access it
-		// We'll inject this into the system message for each request
-		const documentContext = `[Document Chat Context: This conversation references ${fileIdArray.length} uploaded document(s) with IDs: ${fileIdArray.join(', ')}]`;
+		// Override _generate to use Document Chat API instead of OpenAI API
+		const originalGenerate = chatModel._generate.bind(chatModel);
+		chatModel._generate = async function(
+			messages: BaseMessage[],
+			options: any,
+			runManager?: CallbackManagerForLLMRun
+		): Promise<ChatResult> {
+			// Extract the user's query from the last message
+			const lastMessage = messages[messages.length - 1];
+			let query = '';
+			if (typeof lastMessage.content === 'string') {
+				query = lastMessage.content;
+			} else if (Array.isArray(lastMessage.content)) {
+				const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
+				query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
+			}
+
+			// Build input with file references
+			const inputFiles = fileIdArray.map(fileId => ({
+				type: 'input_file',
+				file_id: fileId,
+			}));
+
+			const content = [
+				...inputFiles,
+				{
+					type: 'input_text',
+					text: query,
+				},
+			];
+
+			// Build request body for Document Chat API
+			const requestBody: any = {
+				model,
+				stream: false, // Disable streaming for now
+				input: [
+					{
+						role: 'user',
+						content,
+					},
+				],
+			};
+
+			// Add reasoning if specified
+			const reasoningEffort = (options as any)?.reasoningEffort || 'medium';
+			const reasoningSummary = (options as any)?.reasoningSummary || 'auto';
+			requestBody.reasoning = {
+				effort: reasoningEffort,
+				summary: reasoningSummary,
+			};
+
+			// Add conversation ID if specified
+			if (conversationId) {
+				requestBody.conversation = {
+					id: conversationId,
+				};
+			}
+
+			// Make API call to Document Chat endpoint
+			try {
+				const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${credentials.apiKey}`,
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(requestBody),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(`Document Chat API error (${response.status}): ${errorText}`);
+				}
+
+				const data = await response.json();
+
+				// Extract content from Document Chat response
+				const output = data.output || [];
+				const messageOutput = output.find((item: any) => item.type === 'message');
+				const contentText = messageOutput?.content?.[0]?.text || '';
+				const citations = messageOutput?.content?.[0]?.annotations || [];
+
+				// Create AIMessage with proper structure
+				const aiMessage = new AIMessage({
+					content: contentText,
+					additional_kwargs: {
+						conversation_id: data.conversation?.id,
+						citations,
+					},
+				});
+
+				// Return in LangChain ChatResult format
+				return {
+					generations: [
+						{
+							text: contentText,
+							message: aiMessage,
+						},
+					],
+					llmOutput: {
+						usage: data.usage,
+						conversation_id: data.conversation?.id,
+					},
+				};
+			} catch (error) {
+				console.error('🚫 Document Chat Model Error:', error);
+				throw error;
+			}
+		};
 
 		// Override _llmType to identify this as Document Chat
 		Object.defineProperty(chatModel, '_llmType', {
 			value: () => 'upstage-document-chat',
 			writable: false,
 		});
-
-		// Store metadata about document chat configuration
-		(chatModel as any).documentChatConfig = {
-			fileIds: fileIdArray,
-			conversationId: conversationId || undefined,
-			reasoning: {
-				effort: options.reasoningEffort || 'medium',
-				summary: options.reasoningSummary || 'auto',
-			},
-			documentContext,
-		};
 
 		console.log(`✅ Document Chat Model initialized with ${fileIdArray.length} file(s)`);
 		console.log(`📄 File IDs: ${fileIdArray.join(', ')}`);
