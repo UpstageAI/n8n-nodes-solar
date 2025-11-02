@@ -13,3 +13,4 @@ export { DocumentChatUpstage } from './nodes/DocumentChatUpstage/DocumentChatUps
 // Export LangChain compatible nodes
 export { LmChatModelUpstage } from './nodes/LmChatModelUpstage/LmChatModelUpstage.node';
 export { EmbeddingsUpstageModel } from './nodes/EmbeddingsUpstageModel/EmbeddingsUpstageModel.node';
+export { DocumentChatModelUpstage } from './nodes/DocumentChatModelUpstage/DocumentChatModelUpstage.node';
