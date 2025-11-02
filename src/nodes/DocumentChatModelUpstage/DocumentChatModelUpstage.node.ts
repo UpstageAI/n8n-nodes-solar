@@ -207,9 +207,37 @@ class UpstageDocumentChatModel extends BaseChatModel {
 
 	async _generate(
 		messages: BaseMessage[],
-		_options: this['ParsedCallOptions'],
-		_runManager?: CallbackManagerForLLMRun,
+		options: this['ParsedCallOptions'],
+		runManager?: CallbackManagerForLLMRun,
 	): Promise<ChatResult> {
+		// If streaming is enabled, delegate to _streamResponseChunks and collect results
+		if (this.config.streaming && runManager) {
+			const stream = this._streamResponseChunks(messages, options, runManager);
+			let fullText = '';
+			let lastGenerationInfo: Record<string, any> = {};
+
+			for await (const chunk of stream) {
+				fullText += chunk.text;
+				if (chunk.generationInfo) {
+					lastGenerationInfo = chunk.generationInfo;
+				}
+				// Send streaming chunks to callback for real-time display
+				await runManager?.handleLLMNewToken(chunk.text);
+			}
+
+			const aiMessage = new AIMessage(fullText);
+			return {
+				generations: [
+					{
+						text: fullText,
+						message: aiMessage,
+					},
+				],
+				llmOutput: lastGenerationInfo,
+			};
+		}
+
+		// Non-streaming path
 		// Extract the user's query from the last message
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
