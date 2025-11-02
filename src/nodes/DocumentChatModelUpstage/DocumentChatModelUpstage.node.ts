@@ -47,9 +47,10 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		return this;
 	}
 
-	// Override to indicate streaming support
-	get callKeys(): string[] {
-		return ['stop', 'signal', 'options', 'streaming'];
+	// CRITICAL: Override to indicate streaming support
+	// This tells LangChain that this model can stream
+	get streaming(): boolean {
+		return this.config.streaming || false;
 	}
 
 	// Implement streaming support
@@ -213,40 +214,10 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		console.log('🔍 _generate called with:', {
 			streaming: this.config.streaming,
 			hasRunManager: !!runManager,
-			runManagerMethods: runManager ? Object.keys(runManager) : [],
 		});
 
-		// If streaming is enabled, delegate to _streamResponseChunks and collect results
-		if (this.config.streaming && runManager) {
-			console.log('✅ Taking STREAMING path in _generate');
-			const stream = this._streamResponseChunks(messages, options, runManager);
-			let fullText = '';
-			let lastGenerationInfo: Record<string, any> = {};
-
-			for await (const chunk of stream) {
-				console.log('📦 Received chunk in _generate:', chunk.text.substring(0, 50));
-				fullText += chunk.text;
-				if (chunk.generationInfo) {
-					lastGenerationInfo = chunk.generationInfo;
-				}
-				// Send streaming chunks to callback for real-time display
-				await runManager?.handleLLMNewToken(chunk.text);
-			}
-
-			console.log('✅ Streaming complete, total length:', fullText.length);
-			const aiMessage = new AIMessage(fullText);
-			return {
-				generations: [
-					{
-						text: fullText,
-						message: aiMessage,
-					},
-				],
-				llmOutput: lastGenerationInfo,
-			};
-		}
-
-		// Non-streaming path
+		// Non-streaming path only
+		// When streaming is enabled, LangChain should call _streamResponseChunks directly
 		console.log('⚠️ Taking NON-STREAMING path in _generate');
 		// Extract the user's query from the last message
 		const lastMessage = messages[messages.length - 1];
