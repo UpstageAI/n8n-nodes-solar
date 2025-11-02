@@ -1,4 +1,5 @@
-import { ChatOpenAI } from '@langchain/openai';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
+import type { BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import type { BaseMessage } from '@langchain/core/messages';
 import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { ChatResult } from '@langchain/core/outputs';
@@ -12,31 +13,30 @@ import {
 } from 'n8n-workflow';
 
 import { N8nLlmTracing } from '../../utils/N8nLlmTracing';
-import { makeN8nLlmFailedAttemptHandler } from '../../utils/n8nLlmFailedAttemptHandler';
 import { getConnectionHintNoticeField } from '../../utils/sharedFields';
 
 /**
- * Custom ChatOpenAI wrapper for Upstage Document Chat API
- * Overrides _generate and _streamResponseChunks to use Document Chat endpoints
+ * Document Chat configuration
  */
-class UpstageDocumentChatModel extends ChatOpenAI {
-	private fileIds: string[];
-	private conversationId?: string;
-	private reasoningEffort: string;
-	private reasoningSummary: string;
+interface DocumentChatConfig {
+	apiKey: string;
+	model: string;
+	fileIds: string[];
+	conversationId?: string;
+	reasoningEffort: string;
+	reasoningSummary: string;
+	temperature?: number;
+	streaming?: boolean;
+}
 
-	constructor(config: {
-		apiKey: string;
-		model: string;
-		fileIds: string[];
-		conversationId?: string;
-		reasoningEffort: string;
-		reasoningSummary: string;
-		temperature?: number;
-		streaming?: boolean;
-		callbacks?: any[];
-		onFailedAttempt?: any;
-	}) {
+/**
+ * Custom chat model for Upstage Document Chat API
+ * Extends BaseChatModel directly for full control
+ */
+class UpstageDocumentChatModel extends BaseChatModel {
+	private config: DocumentChatConfig;
+
+	constructor(config: DocumentChatConfig, params?: BaseChatModelParams) {
 		console.log('🔧 UpstageDocumentChatModel constructor called with:', {
 			model: config.model,
 			fileIds: config.fileIds,
@@ -44,43 +44,31 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 			conversationId: config.conversationId,
 		});
 
-		// Call ChatOpenAI constructor
-		super({
-			apiKey: config.apiKey,
-			model: config.model,
-			temperature: config.temperature,
-			streaming: config.streaming || false,
-			configuration: {
-				baseURL: 'https://api.upstage.ai/v1/document-chat',
-			},
-			callbacks: config.callbacks,
-			onFailedAttempt: config.onFailedAttempt,
-		});
-
-		this.fileIds = config.fileIds;
-		this.conversationId = config.conversationId;
-		this.reasoningEffort = config.reasoningEffort;
-		this.reasoningSummary = config.reasoningSummary;
+		super(params || {});
+		this.config = config;
 
 		console.log('✅ UpstageDocumentChatModel initialized');
 	}
 
+	_llmType(): string {
+		return 'upstage-document-chat';
+	}
+
 	/**
-	 * Override _generate for non-streaming requests
-	 * This is called by LangChain when streaming is disabled
+	 * Non-streaming generation
 	 */
-	override async _generate(
+	async _generate(
 		messages: BaseMessage[],
 		options: this['ParsedCallOptions'],
 		runManager?: CallbackManagerForLLMRun,
 	): Promise<ChatResult> {
 		console.log('🚀 _generate called (non-streaming)');
-		console.log('📨 Messages:', messages.length);
+		console.log('📨 Messages count:', messages.length);
+		console.log('🔍 First message:', messages[0]);
 
 		const response = await this.callDocumentChatAPI(messages, false, options?.signal);
 
 		console.log('📥 API Response received');
-		console.log('📊 Response data:', JSON.stringify(response, null, 2));
 
 		// Extract content from Document Chat response
 		const output = response.output || [];
@@ -104,34 +92,38 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 	}
 
 	/**
-	 * Override _streamResponseChunks for streaming requests
-	 * This is called by LangChain when streaming is enabled
+	 * Streaming generation
 	 */
-	override async *_streamResponseChunks(
+	async *_streamResponseChunks(
 		messages: BaseMessage[],
 		options: this['ParsedCallOptions'],
 		runManager?: CallbackManagerForLLMRun,
 	): AsyncGenerator<ChatGenerationChunk> {
 		console.log('🚀 _streamResponseChunks called (streaming)');
-		console.log('📨 Messages:', messages.length);
+		console.log('📨 Messages count:', messages.length);
+		console.log('🔍 First message:', messages[0]);
 		console.log('🔄 Starting SSE stream parsing...');
 
 		const response = await this.callDocumentChatAPI(messages, true, options?.signal);
 
 		if (!response.body) {
+			console.error('❌ No response body for streaming');
 			throw new Error('No response body for streaming');
 		}
+
+		console.log('✅ Response body available, starting to read stream...');
 
 		// Parse SSE stream
 		const reader = response.body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = '';
+		let chunkCount = 0;
 
 		try {
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) {
-					console.log('✅ Stream completed');
+					console.log(`✅ Stream completed - Total chunks: ${chunkCount}`);
 					break;
 				}
 
@@ -141,14 +133,21 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 
 				for (const line of lines) {
 					if (!line.trim()) continue;
-					if (line.startsWith('event:')) continue;
+					if (line.startsWith('event:')) {
+						console.log('📋 Event type:', line);
+						continue;
+					}
 					if (!line.startsWith('data: ')) continue;
 
 					const jsonStr = line.slice(6).trim();
-					if (jsonStr === '[DONE]') continue;
+					if (jsonStr === '[DONE]') {
+						console.log('🏁 Received [DONE] marker');
+						continue;
+					}
 
 					try {
 						const data = JSON.parse(jsonStr);
+						console.log('📦 Parsed data type:', data.type);
 
 						// Extract delta text from Document Chat events
 						let deltaText = '';
@@ -162,9 +161,15 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 						}
 
 						if (deltaText) {
+							chunkCount++;
+							console.log(`💬 Sending chunk ${chunkCount} to n8n...`);
+
 							// Send token to runManager for n8n display
 							if (runManager) {
 								await runManager.handleLLMNewToken(deltaText);
+								console.log('✅ Token sent to runManager');
+							} else {
+								console.warn('⚠️ No runManager available!');
 							}
 
 							// Yield chunk for LangChain
@@ -176,15 +181,18 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 									conversation_id: data.conversation?.id || data.conversation_id,
 								},
 							});
+							console.log('✅ Chunk yielded to LangChain');
 						}
 					} catch (e) {
 						console.error('❌ Failed to parse SSE chunk:', e);
+						console.error('❌ Raw line:', line);
 						continue;
 					}
 				}
 			}
 		} finally {
 			reader.releaseLock();
+			console.log('🔒 Stream reader released');
 		}
 	}
 
@@ -196,6 +204,9 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		stream: boolean,
 		signal?: AbortSignal,
 	): Promise<any> {
+		console.log('🌐 callDocumentChatAPI called');
+		console.log('📊 Stream mode:', stream);
+
 		// Extract query from last message
 		const lastMessage = messages[messages.length - 1];
 		let query = '';
@@ -211,11 +222,11 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 				: (textContent as any)?.text || '';
 		}
 
-		console.log('📝 Query extracted:', query.substring(0, 100));
+		console.log('📝 Query extracted (first 100 chars):', query.substring(0, 100));
 
 		// Build Document Chat request
 		const content = [
-			...this.fileIds.map(fileId => ({
+			...this.config.fileIds.map(fileId => ({
 				type: 'input_file' as const,
 				file_id: fileId,
 			})),
@@ -226,7 +237,7 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		];
 
 		const requestBody: any = {
-			model: this.model,
+			model: this.config.model,
 			stream,
 			input: [
 				{
@@ -235,17 +246,17 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 				},
 			],
 			reasoning: {
-				effort: this.reasoningEffort as 'low' | 'medium' | 'high',
-				summary: this.reasoningSummary as 'auto' | 'enabled' | 'disabled',
+				effort: this.config.reasoningEffort as 'low' | 'medium' | 'high',
+				summary: this.config.reasoningSummary as 'auto' | 'enabled' | 'disabled',
 			},
 		};
 
-		if (this.conversationId) {
-			requestBody.conversation = { id: this.conversationId };
+		if (this.config.conversationId) {
+			requestBody.conversation = { id: this.config.conversationId };
 		}
 
-		if (this.temperature !== undefined) {
-			requestBody.temperature = this.temperature;
+		if (this.config.temperature !== undefined) {
+			requestBody.temperature = this.config.temperature;
 		}
 
 		console.log('📤 Request body:', JSON.stringify(requestBody, null, 2));
@@ -253,29 +264,45 @@ class UpstageDocumentChatModel extends ChatOpenAI {
 		const url = 'https://api.upstage.ai/v1/document-chat/responses';
 		console.log('🌐 Calling endpoint:', url);
 
-		const response = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${(this as any).apiKey}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(requestBody),
-			signal,
-		});
+		try {
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${this.config.apiKey}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(requestBody),
+				signal,
+			});
 
-		console.log('📥 Response status:', response.status, response.statusText);
+			console.log('📥 Response status:', response.status, response.statusText);
+			const headers: any = {};
+			response.headers.forEach((value, key) => {
+				headers[key] = value;
+			});
+			console.log('📥 Response headers:', JSON.stringify(headers));
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			console.error('❌ API Error:', errorText);
-			throw new Error(`Document Chat API error: ${response.status} - ${errorText}`);
-		}
+			if (!response.ok) {
+				const errorText = await response.text();
+				console.error('❌ API Error response:', errorText);
+				throw new Error(`Document Chat API error: ${response.status} - ${errorText}`);
+			}
 
-		// Return response (stream or JSON)
-		if (stream) {
-			return response;
-		} else {
-			return await response.json();
+			console.log('✅ API call successful');
+
+			// Return response (stream or JSON)
+			if (stream) {
+				console.log('🔄 Returning streaming response');
+				return response;
+			} else {
+				const data = await response.json();
+				console.log('📊 Response data:', JSON.stringify(data, null, 2));
+				return data;
+			}
+		} catch (error: any) {
+			console.error('❌ callDocumentChatAPI error:', error);
+			console.error('❌ Error stack:', error.stack);
+			throw error;
 		}
 	}
 }
@@ -495,14 +522,13 @@ export class DocumentChatModelUpstage implements INodeType {
 			};
 		};
 
-		// Create tracing and failure handler
+		// Create tracing
 		const tracing = new N8nLlmTracing(this, {
 			tokensUsageParser: documentChatTokensParser,
 		});
-		const failureHandler = makeN8nLlmFailedAttemptHandler(this);
 
-		// Create Document Chat model (wraps ChatOpenAI)
-		const chatModel = new UpstageDocumentChatModel({
+		// Build Document Chat configuration
+		const documentChatConfig: DocumentChatConfig = {
 			apiKey: credentials.apiKey as string,
 			model: model,
 			fileIds: fileIdArray,
@@ -511,9 +537,15 @@ export class DocumentChatModelUpstage implements INodeType {
 			reasoningSummary: options.reasoningSummary || 'auto',
 			temperature: options.temperature,
 			streaming: options.streaming || false,
+		};
+
+		// Build model params with tracing
+		const modelParams: BaseChatModelParams = {
 			callbacks: tracing ? [tracing] : undefined,
-			onFailedAttempt: failureHandler,
-		});
+		};
+
+		// Create Document Chat model
+		const chatModel = new UpstageDocumentChatModel(documentChatConfig, modelParams);
 
 		console.log(`✅ Document Chat Model initialized with ${fileIdArray.length} file(s)`);
 		console.log(`📄 File IDs: ${fileIdArray.join(', ')}`);
