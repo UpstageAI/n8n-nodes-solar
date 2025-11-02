@@ -120,15 +120,10 @@ class UpstageDocumentChatModel extends BaseChatModel {
 
 			const data = await response.json();
 
-			// Extract the response text
-			let contentText = '';
-			if (data.output && Array.isArray(data.output)) {
-				for (const item of data.output) {
-					if (item.type === 'output_text') {
-						contentText += item.text;
-					}
-				}
-			}
+			// Extract the response text - matching DocumentChatUpstage.node.ts format
+			const output = data.output || [];
+			const messageOutput = output.find((item: any) => item.type === 'message');
+			const contentText = messageOutput?.content?.[0]?.text || '';
 
 			// Create AI message
 			const aiMessage = new AIMessage(contentText);
