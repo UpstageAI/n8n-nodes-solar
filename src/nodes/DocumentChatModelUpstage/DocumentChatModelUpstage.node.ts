@@ -558,6 +558,9 @@ export class DocumentChatModelUpstage implements INodeType {
 		});
 
 		// Build Document Chat configuration
+		console.log('🔍 Node options received:', JSON.stringify(options, null, 2));
+		console.log('🔍 Streaming option value:', options.streaming);
+
 		const documentChatConfig: DocumentChatConfig = {
 			apiKey: credentials.apiKey as string,
 			model: model, // 'genius' or 'turbo'
@@ -568,6 +571,8 @@ export class DocumentChatModelUpstage implements INodeType {
 			temperature: options.temperature,
 			streaming: options.streaming || false,
 		};
+
+		console.log('🔍 DocumentChatConfig created with streaming:', documentChatConfig.streaming);
 
 		// Build LangChain model params
 		const modelParams: BaseChatModelParams = {};
