@@ -1,8 +1,9 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { BaseChatModelParams } from '@langchain/core/language_models/chat_models';
 import type { BaseMessage } from '@langchain/core/messages';
-import { AIMessage } from '@langchain/core/messages';
+import { AIMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { ChatResult } from '@langchain/core/outputs';
+import { ChatGenerationChunk } from '@langchain/core/outputs';
 import type { CallbackManagerForLLMRun } from '@langchain/core/callbacks/manager';
 import {
 	type INodeType,
@@ -44,6 +45,131 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		// but we need to return 'this' to satisfy the interface
 		// The tools will be handled by the Agent framework
 		return this;
+	}
+
+	// Implement streaming support
+	async *_streamResponseChunks(
+		messages: BaseMessage[],
+		_options: this['ParsedCallOptions'],
+		_runManager?: CallbackManagerForLLMRun,
+	): AsyncGenerator<ChatGenerationChunk> {
+		// Extract the user's query from the last message
+		const lastMessage = messages[messages.length - 1];
+		let query = '';
+		if (typeof lastMessage.content === 'string') {
+			query = lastMessage.content;
+		} else if (Array.isArray(lastMessage.content)) {
+			const textContent = lastMessage.content.find((c: any) => c.type === 'text' || typeof c === 'string');
+			query = typeof textContent === 'string' ? textContent : (textContent as any)?.text || '';
+		}
+
+		// Build input with file references
+		const inputFiles = this.config.fileIds.map((fileId: string) => ({
+			type: 'input_file',
+			file_id: fileId,
+		}));
+
+		const content = [
+			...inputFiles,
+			{
+				type: 'input_text',
+				text: query,
+			},
+		];
+
+		// Build request body for Document Chat API with streaming enabled
+		const requestBody: any = {
+			model: this.config.model,
+			stream: true, // Always use streaming in this method
+			input: [
+				{
+					role: 'user',
+					content,
+				},
+			],
+			reasoning: {
+				effort: this.config.reasoningEffort,
+				summary: this.config.reasoningSummary,
+			},
+		};
+
+		if (this.config.conversationId) {
+			requestBody.conversation = {
+				id: this.config.conversationId,
+			};
+		}
+
+		if (this.config.temperature !== undefined) {
+			requestBody.temperature = this.config.temperature;
+		}
+
+		// Make streaming API call
+		const response = await fetch('https://api.upstage.ai/v1/document-chat/responses', {
+			method: 'POST',
+			headers: {
+				'Authorization': `Bearer ${this.config.apiKey}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(requestBody),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`Document Chat API error: ${response.status} ${response.statusText} - ${errorText}`);
+		}
+
+		if (!response.body) {
+			throw new Error('Response body is null');
+		}
+
+		// Stream the response chunks
+		const reader = response.body.getReader();
+		const decoder = new TextDecoder();
+
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				const chunk = decoder.decode(value, { stream: true });
+				const lines = chunk.split('\n');
+
+				for (const line of lines) {
+					if (!line.trim() || !line.startsWith('data: ')) continue;
+
+					const jsonStr = line.slice(6);
+					if (jsonStr === '[DONE]') continue;
+
+					try {
+						const data = JSON.parse(jsonStr);
+
+						// Extract text from streaming chunk
+						if (data.output && Array.isArray(data.output)) {
+							const messageOutput = data.output.find((item: any) => item.type === 'message');
+							if (messageOutput?.content?.[0]?.text) {
+								const text = messageOutput.content[0].text;
+								const chunk = new AIMessageChunk(text);
+
+								// Yield proper ChatGenerationChunk
+								yield new ChatGenerationChunk({
+									text,
+									message: chunk,
+									generationInfo: {
+										usage: data.usage,
+										conversation_id: data.conversation?.id,
+									},
+								});
+							}
+						}
+					} catch (e) {
+						// Skip invalid JSON lines
+						continue;
+					}
+				}
+			}
+		} finally {
+			reader.releaseLock();
+		}
 	}
 
 	async _generate(
