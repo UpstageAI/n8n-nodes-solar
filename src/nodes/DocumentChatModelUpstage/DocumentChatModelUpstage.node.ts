@@ -167,13 +167,16 @@ class UpstageDocumentChatModel extends BaseChatModel {
 						// Extract delta text from Document Chat events
 						let deltaText = '';
 
-						if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
-							deltaText = data.delta;
-							console.log('📝 Reasoning delta:', deltaText.substring(0, 50));
-						} else if (data.type === 'response.output_text.delta' && data.delta) {
-							deltaText = data.delta;
-							console.log('📝 Output delta:', deltaText.substring(0, 50));
-						}
+					// Prioritize actual output text for user display
+					if (data.type === 'response.output_text.delta' && data.delta) {
+						deltaText = data.delta;
+						console.log('📝 Output delta:', deltaText.substring(0, 50));
+					}
+					// Log reasoning but don't display it to users
+					else if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
+						console.log('🤔 [Internal Reasoning]:', data.delta.substring(0, 100));
+						// Don't set deltaText - won't be displayed to user
+					}
 
 						if (deltaText) {
 							chunkCount++;
