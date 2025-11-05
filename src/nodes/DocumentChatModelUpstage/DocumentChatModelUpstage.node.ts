@@ -133,6 +133,8 @@ class UpstageDocumentChatModel extends BaseChatModel {
 		const decoder = new TextDecoder();
 		let buffer = '';
 		let chunkCount = 0;
+		let reasoningStarted = false;
+		let outputStarted = false;
 
 		try {
 			while (true) {
@@ -167,15 +169,33 @@ class UpstageDocumentChatModel extends BaseChatModel {
 						// Extract delta text from Document Chat events
 						let deltaText = '';
 
-					// Prioritize actual output text for user display
+					// Handle output text (user-facing response)
 					if (data.type === 'response.output_text.delta' && data.delta) {
-						deltaText = data.delta;
-						console.log('📝 Output delta:', deltaText.substring(0, 50));
+						// Close reasoning tags if reasoning was started
+						if (reasoningStarted && !outputStarted) {
+							deltaText = '</think>\n\n';
+							outputStarted = true;
+						}
+						deltaText += data.delta;
+						console.log('📝 Output delta:', data.delta.substring(0, 50));
 					}
-					// Log reasoning but don't display it to users
+					// Handle reasoning text (wrapped in <think> tags)
 					else if (data.type === 'response.reasoning_summary_text.delta' && data.delta) {
-						console.log('🤔 [Internal Reasoning]:', data.delta.substring(0, 100));
-						// Don't set deltaText - won't be displayed to user
+						// Start reasoning section on first reasoning delta
+						if (!reasoningStarted) {
+							deltaText = '<think>\n';
+							reasoningStarted = true;
+						}
+						deltaText += data.delta;
+						console.log('🤔 Reasoning delta:', data.delta.substring(0, 100));
+					}
+					// Handle reasoning done event
+					else if (data.type === 'response.reasoning_summary_text.done') {
+						if (reasoningStarted && !outputStarted) {
+							deltaText = '</think>\n\n';
+							outputStarted = true;
+						}
+						console.log('✅ Reasoning section completed');
 					}
 
 						if (deltaText) {
