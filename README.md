@@ -113,7 +113,7 @@ Use the **Embeddings Upstage** node with "Array of Texts" input type to process 
 ## API Reference
 
 ### Solar Chat API
-- Endpoint: `https://api.upstage.ai/v1/solar/chat/completions`
+- Endpoint: `https://api.upstage.ai/v1/chat/completions`
 - Documentation: [Upstage Chat API](https://developers.upstage.ai/docs/apis/chat)
 
 ### Solar Embeddings API

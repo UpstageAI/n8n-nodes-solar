@@ -46,6 +46,16 @@ export class LmChatUpstage implements INodeType {
 						value: 'solar-pro2',
 						description: 'Latest and most advanced Solar model',
 					},
+					{
+						name: 'solar-pro2-nightly',
+						value: 'solar-pro2-nightly',
+						description: 'Nightly build of Solar Pro2 (experimental)',
+					},
+					{
+						name: 'solar-mini-nightly',
+						value: 'solar-mini-nightly',
+						description: 'Nightly build of Solar Mini (experimental)',
+					},
 				],
 				default: 'solar-mini',
 				description: 'The Solar model to use',
@@ -97,6 +107,26 @@ export class LmChatUpstage implements INodeType {
 						],
 					},
 				],
+			},
+			{
+				displayName: 'Tools (JSON)',
+				name: 'tools',
+				type: 'json',
+				default: '[]',
+				description:
+					'Array of tool/function specs. Follows OpenAI tools format. Leave empty to disable.',
+			},
+			{
+				displayName: 'Tool Choice',
+				name: 'tool_choice',
+				type: 'options',
+				options: [
+					{ name: 'Auto', value: 'auto' },
+					{ name: 'Required', value: 'required' },
+					{ name: 'None', value: 'none' },
+				],
+				default: 'auto',
+				description: 'How the model should use tools. Set to Required to force function calling.',
 			},
 			{
 				displayName: 'Options',
@@ -266,6 +296,10 @@ export class LmChatUpstage implements INodeType {
 					json_schema?: string;
 				};
 
+				// Optional tools and tool_choice parameters
+				const toolsRaw = this.getNodeParameter('tools', i, '[]') as string;
+				const toolChoice = this.getNodeParameter('tool_choice', i, 'auto') as string;
+
 				// Validate messages array
 				if (!messages || messages.length === 0) {
 					throw new Error(
@@ -291,6 +325,21 @@ export class LmChatUpstage implements INodeType {
 					messages,
 					...options,
 				};
+
+				// Attach tools if provided
+				try {
+					const parsedTools = toolsRaw ? JSON.parse(toolsRaw) : [];
+					if (Array.isArray(parsedTools) && parsedTools.length > 0) {
+						requestBody.tools = parsedTools;
+					}
+				} catch (e) {
+					throw new Error('Invalid JSON in Tools field');
+				}
+
+				// Attach tool_choice if not none
+				if (toolChoice && toolChoice !== 'none') {
+					requestBody.tool_choice = toolChoice;
+				}
 
 				// Handle response_format properly
 				if (options.response_format && options.response_format !== 'text') {
