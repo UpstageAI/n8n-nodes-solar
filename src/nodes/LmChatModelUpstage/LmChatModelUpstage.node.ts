@@ -472,6 +472,15 @@ export class LmChatModelUpstage implements INodeType {
 
 		const model = new ChatOpenAI(modelConfig);
 
+		// Debug logging for troubleshooting tool calling issues
+		console.log(`🔍 [Solar Chat Model] Initialized: ${modelName}`, {
+			hasMaxTokens: !!modelConfig.maxTokens,
+			hasTemperature: !!modelConfig.temperature,
+			streaming: modelConfig.streaming,
+			baseURL: modelConfig.configuration?.baseURL,
+			isNightly: modelName.includes('nightly'),
+		});
+
 		return {
 			response: model,
 		};
